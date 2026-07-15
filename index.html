@@ -222,10 +222,6 @@
         <strong style="color:var(--text);">Exxon</strong> (treated produced-water feedstock): ~25,000 bbl/day intake.
         &nbsp;|&nbsp;
         <strong style="color:var(--text);">Strata</strong> (brine feedstock): ~6,000 bbl/day intake.
-        &nbsp;|&nbsp;
-        <strong style="color:var(--text);">Electric Pump</strong>: 60 HP electric, 6x6.
-        &nbsp;|&nbsp;
-        <strong style="color:var(--text);">Diesel Pump</strong>: 60 HP diesel, 6x6.
     </div>
 </div>
 
@@ -1029,7 +1025,7 @@ function drawCircleNode(node, label) {
     drawTextLines([label], c.x, c.y, 15, "#e8ecef");
 }
 
-function drawDiamondNode(node, lines) {
+function drawDiamondNode(node, lines, spec) {
     const t = worldToScreen(node.top.x, node.top.y);
     const r = worldToScreen(node.right.x, node.right.y);
     const b = worldToScreen(node.bottom.x, node.bottom.y);
@@ -1039,6 +1035,8 @@ function drawDiamondNode(node, lines) {
     noFill();
     quad(t.x, t.y, r.x, r.y, b.x, b.y, l.x, l.y);
     drawTextLines(lines, (t.x + b.x) / 2, (l.y + r.y) / 2, 12, "#e8ecef");
+    // small spec callout just under the diamond (e.g. "60 HP, 6x6")
+    if (spec) drawTextLines([spec], (t.x + b.x) / 2, b.y + 10, 9, "#8f99a3");
 }
 
 function drawTriangleNode(node, label, col) {
@@ -1143,8 +1141,8 @@ function drawScene() {
     drawPillNode(INFLUENT_RISER, ["Influent", "Riser"]);
     drawCircleNode(AST_60K, "60k AST");
     drawCircleNode(AST_45K, "45k AST");
-    drawDiamondNode(ELEC_PUMP, ["Electric", "Pump"]);
-    drawDiamondNode(DIESEL_PUMP, ["Diesel", "Pump"]);
+    drawDiamondNode(ELEC_PUMP, ["Electric", "Pump"], "60 HP, 6x6");
+    drawDiamondNode(DIESEL_PUMP, ["Diesel", "Pump"], "60 HP, 6x6");
     drawBoxNode(TETRA, ["Tetra", "Treatment"], 12);
     drawBoxNode(POND_A, ["Pond A", "(300,000 bbl)"], 13);
     drawBoxNode(POND_B, ["Pond B", "(1,000,000 bbl)"], 14);
