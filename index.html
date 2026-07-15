@@ -215,6 +215,20 @@
     <div class="subtitle">Operation Time: 7:00 AM – 5:00 PM</div>
 </div>
 
+<!-- ===== PROCESS FLOW NOTES (for viewers unfamiliar with the facility) ===== -->
+<div class="panel" style="margin-bottom:16px; font-size:13px; line-height:1.6;">
+    <div class="panel-title">Process Flow Notes</div>
+    <div style="color:var(--text-dim);">
+        <strong style="color:var(--text);">Exxon</strong> (treated produced-water feedstock): ~25,000 bbl/day intake.
+        &nbsp;|&nbsp;
+        <strong style="color:var(--text);">Strata</strong> (brine feedstock): ~6,000 bbl/day intake.
+        &nbsp;|&nbsp;
+        <strong style="color:var(--text);">Electric Pump</strong>: 60 HP electric, 6x6.
+        &nbsp;|&nbsp;
+        <strong style="color:var(--text);">Diesel Pump</strong>: 60 HP diesel, 6x6.
+    </div>
+</div>
+
 <!-- ===== INPUT CONTROLS ===== -->
 <div class="panel toolbar">
 
@@ -1132,9 +1146,9 @@ function drawScene() {
     drawDiamondNode(ELEC_PUMP, ["Electric", "Pump"]);
     drawDiamondNode(DIESEL_PUMP, ["Diesel", "Pump"]);
     drawBoxNode(TETRA, ["Tetra", "Treatment"], 12);
-    drawBoxNode(POND_A, ["Pond A"], 13);
-    drawBoxNode(POND_B, ["Pond B"], 14);
-    drawBoxNode(POND_C, ["Pond C"], 14);
+    drawBoxNode(POND_A, ["Pond A", "(300,000 bbl)"], 13);
+    drawBoxNode(POND_B, ["Pond B", "(1,000,000 bbl)"], 14);
+    drawBoxNode(POND_C, ["Pond C", "(1,000,000 bbl)"], 14);
 
     // static connector piping -- exact waypoints parsed from the SVG (see comment above).
     // Colors: gray = always-idle/structural piping. Green = actively flowing --
