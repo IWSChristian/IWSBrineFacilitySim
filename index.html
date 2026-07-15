@@ -267,6 +267,7 @@
         <div class="panel" style="margin-top:16px;">
             <div class="panel-title">Summary</div>
             <div id="summaryContent">Simulation not finished.</div>
+            <div id="summaryMathNote" style="margin-top:8px; padding-top:8px; border-top:1px solid var(--border); font-size:11px; color:var(--text-dim);"></div>
         </div>
     </div>
 </div>
@@ -1234,6 +1235,16 @@ function updateSummary() {
         `$${revenue.toFixed(0)} revenue | ` +
         `${bblPerHr.toFixed(1)} bbl/hr | ` +
         `Utilization: ${actualUtil.toFixed(1)}% of ${designTotal} bbl/day (${MAX_LANE_CAPACITY} per lane).`;
+
+    const noteEl = document.getElementById("summaryMathNote");
+    if (noteEl) {
+        const trucksPerLaneDay = TOTAL_MIN / BAY_TIME_MIN;
+        noteEl.textContent =
+            `How the ${MAX_LANE_CAPACITY.toLocaleString()} bbl/lane/day max is calculated: ` +
+            `${TOTAL_MIN} min day ÷ ${BAY_TIME_MIN} min/truck ` +
+            `(${BACK_IN_MIN} back-in + ${LOAD_MIN} load + ${PULL_OUT_MIN} pull-out) ` +
+            `= ${trucksPerLaneDay.toFixed(0)} trucks/lane/day × ${TRUCK_SIZE_BBL} bbl/truck.`;
+    }
 }
 
 function clearSummary() {
