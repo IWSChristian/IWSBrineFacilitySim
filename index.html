@@ -887,7 +887,7 @@ function updateTankHUD_HTML() {
         barColor   = "#f87171"; // red -- can't load a truck right now
         statusText = "Insufficient volume to load";
     } else if (inRefillMode) {
-        barColor   = "#f87171"; // red -- actively refilling from 45k AST
+        barColor   = "#fb923c"; // orange -- actively refilling from 45k AST (normal, not a problem)
         statusText = `Refilling from 45k AST (${tetraRateBblPerMin.toFixed(1)} bbl/min)`;
     } else if (vol <= STORAGE_LOW_THRESHOLD) {
         barColor   = "#fbbf24"; // yellow -- low, refill should be kicking in
@@ -1035,8 +1035,16 @@ function drawDiamondNode(node, lines, spec) {
     noFill();
     quad(t.x, t.y, r.x, r.y, b.x, b.y, l.x, l.y);
     drawTextLines(lines, (t.x + b.x) / 2, (l.y + r.y) / 2, 12, "#e8ecef");
-    // small spec callout just under the diamond (e.g. "60 HP, 6x6")
-    if (spec) drawTextLines([spec], (t.x + b.x) / 2, b.y + 10, 9, "#8f99a3");
+    // small spec callout at the diamond's top-right (e.g. "60 HP, 6x6")
+    if (spec) {
+        push();
+        fill("#8f99a3");
+        noStroke();
+        textAlign(LEFT, BOTTOM);
+        textSize(9);
+        text(spec, r.x + 4, t.y - 2);
+        pop();
+    }
 }
 
 function drawTriangleNode(node, label, col) {
@@ -1072,8 +1080,8 @@ function drawWeirTankNode() {
     const perTankCapacity = STORAGE_CAPACITY / n; // 500 bbl per tank
 
     let statusColor;
-    if (storageVolume < TRUCK_SIZE_BBL) statusColor = "#f87171";
-    else if (inRefillMode) statusColor = "#f87171";
+    if (storageVolume < TRUCK_SIZE_BBL) statusColor = "#f87171"; // red -- genuinely can't load a truck
+    else if (inRefillMode) statusColor = "#fb923c"; // orange -- actively refilling, not a problem
     else if (storageVolume <= STORAGE_LOW_THRESHOLD) statusColor = "#fbbf24";
     else statusColor = "#4ade80";
 
@@ -1136,7 +1144,7 @@ function drawScene() {
     rectMode(CORNER);
 
     // ===== static PFD backdrop, drawn in its own real layout =====
-    drawTriangleNode(EXXON, "Exxon", "#f87171");
+    drawTriangleNode(EXXON, "Exxon", "#7dd3fc");
     drawTriangleNode(STRATA, "Strata", "#4ade80");
     drawPillNode(INFLUENT_RISER, ["Influent", "Riser"]);
     drawCircleNode(AST_60K, "60k AST");
@@ -1152,8 +1160,9 @@ function drawScene() {
     // Colors: gray = always-idle/structural piping. Green = actively flowing --
     // both the normal-ops path (60k AST -> Electric Pump -> Tetra -> Pond B/C)
     // and the continuous raw feedstock intake (Exxon/Strata -> Influent Riser
-    // -> 60k AST), which runs 24/7 regardless of mode. Red = the refill-mode
-    // path (45k AST -> Electric Pump -> Tetra -> Weir Tank Storage). Amber
+    // -> 60k AST), which runs 24/7 regardless of mode. Orange = the refill-mode
+    // path (45k AST -> Electric Pump -> Tetra -> Weir Tank Storage) -- a normal
+    // operating mode, not a problem, so it's deliberately not red. Amber
     // dashed = the Strata -> 45k AST tap, which only actually flows during the
     // periodic (~every 10 days) 45k AST refill -- see the "45k AST Refill
     // Schedule" HUD card, colored to match.
@@ -1162,7 +1171,7 @@ function drawScene() {
     // segment is drawn exactly once -- two calls both drawing over the same
     // shared prefix (e.g. Tetra's outlet before it forks) would otherwise let
     // whichever call runs last silently overwrite the other's color there.
-    const NORMAL_COLOR = "#4ade80", REFILL_COLOR = "#f87171", IDLE_COLOR = "#5b6470";
+    const NORMAL_COLOR = "#4ade80", REFILL_COLOR = "#fb923c", IDLE_COLOR = "#5b6470";
 
     // Exxon/Strata feedstock intake -- continuous, not tied to the mode switch
     drawWorldPolyline([{x:80,y:1115},{x:80,y:855}], NORMAL_COLOR, 3, true);                                    // Exxon -> Influent Riser
