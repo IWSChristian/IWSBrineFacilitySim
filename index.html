@@ -180,21 +180,6 @@
             margin-top: 2px;
         }
 
-        /* ===== Graphs ===== */
-        .graph-row {
-            display: flex;
-            gap: 16px;
-            flex-wrap: wrap;
-        }
-        .graph-card { flex: 1; min-width: 320px; }
-        .graph-card canvas {
-            width: 100%;
-            background: var(--panel-2);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            margin-top: 8px;
-        }
-
         #summaryContent {
             color: var(--text-dim);
             font-size: 14px;
@@ -277,26 +262,13 @@
                 <div class="stat-value" id="completedTrucksText">0</div>
             </div>
         </div>
-    </div>
-</div>
 
-<!-- ===== GRAPH HOLDERS ===== -->
-<div class="graph-row">
-    <div class="panel graph-card">
-        <div class="panel-title">Cumulative Barrels vs Time (10-hr day)</div>
-        <canvas id="bblGraph" width="400" height="200"></canvas>
+        <!-- ===== SUMMARY (live, updates every frame) ===== -->
+        <div class="panel" style="margin-top:16px;">
+            <div class="panel-title">Summary</div>
+            <div id="summaryContent">Simulation not finished.</div>
+        </div>
     </div>
-
-    <div class="panel graph-card">
-        <div class="panel-title">Cumulative Revenue vs Time ($2.00/bbl)</div>
-        <canvas id="revGraph" width="400" height="200"></canvas>
-    </div>
-</div>
-
-<!-- ===== SUMMARY AFTER SIM FINISH ===== -->
-<div class="panel">
-    <div class="panel-title">End of Simulation Summary</div>
-    <div id="summaryContent">Simulation not finished.</div>
 </div>
 
 </div>
@@ -438,14 +410,6 @@ let arrivalTruck      = null;
 let activeTrucks      = [];
 let completedCount    = 0;
 let currentTotalBbl   = 0;
-
-// history for graphs
-let timeHistory = [];
-let bblHistory  = [];
-
-// graph contexts
-let bblGraphCtx = null;
-let revGraphCtx = null;
 
 
 /* ============================================
@@ -731,8 +695,6 @@ function initState() {
     queueTrucks     = [];
     arrivalTruck    = null;
     activeTrucks    = [];
-    timeHistory     = [];
-    bblHistory      = [];
 
     laneNextAvailable = [...laneInitialAvailable];
 
@@ -1035,14 +997,18 @@ function drawDiamondNode(node, lines, spec) {
     noFill();
     quad(t.x, t.y, r.x, r.y, b.x, b.y, l.x, l.y);
     drawTextLines(lines, (t.x + b.x) / 2, (l.y + r.y) / 2, 12, "#e8ecef");
-    // small spec callout at the diamond's top-right (e.g. "60 HP, 6x6")
+    // small spec callout at the diamond's top-right, tilted to slope with
+    // that edge (top vertex -> right vertex runs down-and-right, so the text
+    // is rotated 45 deg clockwise to sit parallel to it)
     if (spec) {
         push();
+        translate(r.x + 4, t.y - 2);
+        rotate(Math.PI / 4);
         fill("#8f99a3");
         noStroke();
         textAlign(LEFT, BOTTOM);
         textSize(9);
-        text(spec, r.x + 4, t.y - 2);
+        text(spec, 0, 0);
         pop();
     }
 }
@@ -1249,127 +1215,8 @@ function drawScene() {
 
 
 /* ============================================
-   GRAPHS & STATUS / SUMMARY
+   STATUS / SUMMARY
    ============================================ */
-
-function setupGraphs() {
-    const b = document.getElementById("bblGraph");
-    const r = document.getElementById("revGraph");
-    if (b) bblGraphCtx = b.getContext("2d");
-    if (r) revGraphCtx = r.getContext("2d");
-    redrawGraphs();
-}
-
-function redrawGraphs() {
-    drawVolumeGraph();
-    drawRevenueGraph();
-}
-
-function drawVolumeGraph() {
-    if (!bblGraphCtx) return;
-    const ctx = bblGraphCtx;
-    const canvas = ctx.canvas;
-    const w = canvas.width;
-    const h = canvas.height;
-
-    ctx.clearRect(0,0,w,h);
-
-    ctx.strokeStyle = "#666";
-    ctx.strokeRect(30,10,w-40,h-30);
-
-    ctx.fillStyle = "#ccc";
-    ctx.font = "10px Arial";
-    ctx.fillText("Time (min)", w/2-20, h-4);
-
-    ctx.save();
-    ctx.translate(10,h/2+20);
-    ctx.rotate(-Math.PI/2);
-    ctx.fillText("Cumulative bbl",0,0);
-    ctx.restore();
-
-    if (timeHistory.length < 2) return;
-
-    let maxVol = laneCount * MAX_LANE_CAPACITY;
-    for (const v of bblHistory) if (v > maxVol) maxVol = v;
-    if (maxVol <= 1) maxVol = 1;
-
-    const x0 = 30, y0 = h-20, x1 = w-10, y1 = 10;
-
-    ctx.strokeStyle = "#00dddd";
-    ctx.beginPath();
-    for (let i = 0; i < timeHistory.length; i++) {
-        const t   = timeHistory[i];
-        const vol = bblHistory[i];
-
-        const x = x0 + (t / TOTAL_MIN) * (x1 - x0);
-        const y = y0 - (vol / maxVol) * (y0 - y1);
-
-        if (i === 0) ctx.moveTo(x,y);
-        else ctx.lineTo(x,y);
-    }
-    ctx.stroke();
-
-    // numeric overlay
-    ctx.fillStyle = "rgba(0,0,0,0.7)";
-    ctx.fillRect(w-120,12,108,24);
-    ctx.fillStyle = "#fff";
-    ctx.font = "12px Arial";
-    ctx.fillText(`Bbl Sold: ${currentTotalBbl}`, w-115, 30);
-}
-
-function drawRevenueGraph() {
-    if (!revGraphCtx) return;
-    const ctx = revGraphCtx;
-    const canvas = ctx.canvas;
-    const w = canvas.width;
-    const h = canvas.height;
-
-    ctx.clearRect(0,0,w,h);
-
-    ctx.strokeStyle = "#666";
-    ctx.strokeRect(30,10,w-40,h-30);
-
-    ctx.fillStyle = "#ccc";
-    ctx.font = "10px Arial";
-    ctx.fillText("Time (min)", w/2-20, h-4);
-
-    ctx.save();
-    ctx.translate(10,h/2+20);
-    ctx.rotate(-Math.PI/2);
-    ctx.fillText("Cumulative Revenue ($)",0,0);
-    ctx.restore();
-
-    if (timeHistory.length < 2) return;
-
-    const revenueHistory = bblHistory.map(v => v * PRICE_PER_BBL);
-
-    let maxRev = laneCount * MAX_LANE_CAPACITY * PRICE_PER_BBL;
-    for (const r of revenueHistory) if (r > maxRev) maxRev = r;
-    if (maxRev <= 1) maxRev = 1;
-
-    const x0 = 30, y0 = h-20, x1 = w-10, y1 = 10;
-
-    ctx.strokeStyle = "#ffcc33";
-    ctx.beginPath();
-    for (let i = 0; i < timeHistory.length; i++) {
-        const t   = timeHistory[i];
-        const rev = revenueHistory[i];
-
-        const x = x0 + (t / TOTAL_MIN) * (x1 - x0);
-        const y = y0 - (rev / maxRev) * (y0 - y1);
-
-        if (i === 0) ctx.moveTo(x,y);
-        else ctx.lineTo(x,y);
-    }
-    ctx.stroke();
-
-    const latestRevenue = currentTotalBbl * PRICE_PER_BBL;
-    ctx.fillStyle = "rgba(0,0,0,0.7)";
-    ctx.fillRect(w-135,12,125,24);
-    ctx.fillStyle = "#fff";
-    ctx.font = "12px Arial";
-    ctx.fillText(`Revenue: $${latestRevenue.toFixed(0)}`, w-130, 30);
-}
 
 function updateSimTimeText() {
     const el = document.getElementById("simTimeText");
@@ -1431,7 +1278,6 @@ function configureLanes(count) {
     initState();
     recomputeArrivalInterval();
     clearSummary();
-    redrawGraphs();
 }
 
 function resetSimulation() {
@@ -1440,7 +1286,6 @@ function resetSimulation() {
     updateSimTimeText();
     updateStatsText();
     clearSummary();
-    redrawGraphs();
     loop();
 }
 
@@ -1454,7 +1299,6 @@ function setup() {
     // Pond B/Pond C extend the diagram well to the right)
     const canvas = createCanvas(1144, 791);
     canvas.parent("canvasHolder");
-    setupGraphs();
 
     configureLanes(2);
 
@@ -1480,20 +1324,14 @@ function draw() {
 
     currentTotalBbl = completedCount * TRUCK_SIZE_BBL;
 
-    if (timeHistory.length === 0 || timeHistory[timeHistory.length - 1] < simMinutes) {
-        timeHistory.push(simMinutes);
-        bblHistory.push(currentTotalBbl);
-    }
-
     drawScene();
     updateSimTimeText();
     updateStatsText();
-    redrawGraphs();
     updateTankHUD_HTML();
+    updateSummary();
 
     if (simMinutes >= TOTAL_MIN) {
         noLoop();
-        updateSummary();
     }
 }
 </script>
