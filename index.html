@@ -301,6 +301,11 @@ const BACK_IN_MIN  = 5;
 const LOAD_MIN     = 15;
 const PULL_OUT_MIN = 5;
 
+// Floating "-100 bbls" callout, spawned once per truck right as it starts
+// pulling out of the bay
+const POPUP_DURATION_MS = 1100;
+const POPUP_RISE_PX     = 30;
+
 // Volumes and economics
 const TRUCK_SIZE_BBL       = 100;
 const PRICE_PER_BBL        = 2.00;
@@ -416,6 +421,7 @@ let arrivalTruck      = null;
 let activeTrucks      = [];
 let completedCount    = 0;
 let currentTotalBbl   = 0;
+let bblPopups         = []; // floating "-100 bbls" callouts, spawned as trucks pull out
 
 
 /* ============================================
@@ -649,13 +655,28 @@ function updateLanesAndQueue() {
             lane,
             start,
             end,
-            startX: queueSlotX(0)
+            startX: queueSlotX(0),
+            popupShown: false
         });
 
         // Lane becomes free again after this truck, unless
         // later overridden by a refill scheduled in processCompletedTrucks().
         laneNextAvailable[lane] = end;
     }
+}
+
+// Spawn a "-100 bbls" callout exactly once per truck, right as it starts
+// pulling out of the bay -- then expire callouts once their animation ends.
+function updateBblPopups() {
+    for (const tr of activeTrucks) {
+        const phase = simMinutes - tr.start;
+        if (!tr.popupShown && phase >= BACK_IN_MIN + LOAD_MIN) {
+            const pad = padPositions[tr.lane];
+            bblPopups.push({ x: pad.x, y: pad.y, spawnMs: millis() });
+            tr.popupShown = true;
+        }
+    }
+    bblPopups = bblPopups.filter(p => millis() - p.spawnMs < POPUP_DURATION_MS);
 }
 
 function applySettings() {
@@ -709,6 +730,7 @@ function initState() {
     queueTrucks     = [];
     arrivalTruck    = null;
     activeTrucks    = [];
+    bblPopups       = [];
 
     laneNextAvailable = [...laneInitialAvailable];
 
@@ -834,6 +856,27 @@ function drawActiveTrucks() {
         if (!p) continue;
         const s = worldToScreen(p.x, p.y);
         drawTruckIcon(s.x, s.y, p.angle);
+    }
+}
+
+// Video-game-style "-100 bbls" callout: rises and fades out over
+// POPUP_DURATION_MS, right above wherever the truck was parked.
+function drawBblPopups() {
+    const t = millis();
+    for (const p of bblPopups) {
+        const frac  = constrain((t - p.spawnMs) / POPUP_DURATION_MS, 0, 1);
+        const s     = worldToScreen(p.x, p.y);
+        const yUp   = frac * POPUP_RISE_PX;
+        const alpha = 255 * (1 - frac);
+
+        push();
+        noStroke();
+        fill(248, 113, 113, alpha);
+        textAlign(CENTER, CENTER);
+        textStyle(BOLD);
+        textSize(17);
+        text("-100 bbls", s.x, s.y - 22 - yUp);
+        pop();
     }
 }
 
@@ -1253,6 +1296,7 @@ function drawScene() {
     drawQueue();
     drawArrivalTruck();
     drawActiveTrucks();
+    drawBblPopups();
 }
 
 
@@ -1365,6 +1409,7 @@ function draw() {
     updateArrival();
     processCompletedTrucks();
     updateLanesAndQueue();
+    updateBblPopups();
 
     currentTotalBbl = completedCount * TRUCK_SIZE_BBL;
 
