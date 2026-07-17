@@ -368,12 +368,12 @@ const WORLD_Y_MAX = 1390;
 
 // ===== Real PFD node geometry (parsed from the SVG) =====
 const WEIR_TANK       = { x: 613, y: 1,   w: 140, h: 352 };           // right 753, bottom 353 -- narrowed to leave a real gap before the readout
-const WEIR_READOUT    = { x: 795, y: 1,   w: 112, h: 352 };           // digital level readout -- shifted further right for real breathing room around the refill riser
+const WEIR_READOUT    = { x: 830, y: 1,   w: 140, h: 352 };           // digital level readout -- real gap from the tank now, room for the pipe junction to read clearly
 const AST_60K         = { cx: 175, cy: 536, r: 103 };
 const AST_45K         = { cx: 626, cy: 536, r: 103 };
 const ELEC_PUMP       = { top: {x:401,y:438}, right:{x:476,y:495}, bottom:{x:401,y:552}, left:{x:326,y:495} };
 const POND_A          = { x: 912, y: 353, w: 300, h: 328 };           // right 1212, bottom 681
-const SIM_STATUS_BOX  = { x: 912, y: 1, w: 480, h: 195 };             // clock + status: wide and short, using the space above Pond A/B (which don't start until y=353)
+const SIM_STATUS_BOX  = { x: 985, y: 1, w: 310, h: 280 };             // clock + status: narrower now (readout took the width), so taller to fit 3 wrapped lines with real margin
 const POND_B          = { x: 1315, y: 353, w: 665, h: 328 };          // right 1980, bottom 681
 const POND_B_INLET    = { x: 1385, y: 619 };                          // just inside Pond B, near where the pipe enters
 const POND_C          = { x: 1315, y: 708, w: 665, h: 328 };          // right 1980, bottom 1036
@@ -1441,21 +1441,25 @@ function drawScene() {
     drawWorldPolyline([{x:401,y:552},{x:401,y:660},{x:488,y:660},{x:488,y:865}],
         PRODUCED_COLOR, 3, true, false, true);
 
-    // Tetra -> first junction (814,967): a pass-through T, not a destination
-    // -- no arrowhead here, since it just feeds the two branches below (each
-    // of which has its own arrow at its actual destination). An arrowhead on
-    // this segment was what made the Weir Tank riser tapping off earlier at
-    // x:768 look like it "looped back": the arrow implied flow reached 814
-    // before anything branched, so a riser starting to its left (768) read
-    // as doubling back.
-    drawWorldPolyline([{x:613,y:967},{x:814,y:967}],
+    // Tetra -> tap (791,967): always active, shared by both branches below.
+    // The tap sits in the gap between the tank (ends 753) and the Weir Tank
+    // Level readout (starts 830), so the riser off it doesn't run behind the
+    // readout's opaque panel.
+    drawWorldPolyline([{x:613,y:967},{x:791,y:967}],
         TREATED_COLOR, 3, false, false, true);
-    // junction -> Weir Tank Storage (refill-mode branch, idle otherwise).
-    // Taps off the trunk at x:774 -- centered in the gap between the tank
-    // (ends 753) and the Weir Tank Level readout (starts 795) -- so the
-    // riser doesn't run behind the readout's opaque panel.
-    drawWorldPolyline([{x:774,y:967},{x:774,y:183},{x:753,y:183}],
+    // tap -> Weir Tank Storage: only actually flowing in refill mode. Turns
+    // immediately at the tap -- it does NOT continue toward the old (814,967)
+    // junction first. That's the fix for the "loop" look: previously the tap
+    // sat to the left of a junction that kept animating flow rightward past
+    // it (toward the ponds) even during refill mode, when physically nothing
+    // continues that way once the tank is what's being filled.
+    drawWorldPolyline([{x:791,y:967},{x:791,y:183},{x:753,y:183}],
         inRefillMode ? TREATED_COLOR : IDLE_COLOR, inRefillMode ? 3 : 2, true, false, inRefillMode);
+    // tap -> junction (814,967): continues toward the ponds -- only actually
+    // flowing in normal mode (idle during refill, since nothing physically
+    // continues past the tap toward the ponds while the tank is filling).
+    drawWorldPolyline([{x:791,y:967},{x:814,y:967}],
+        inRefillMode ? IDLE_COLOR : TREATED_COLOR, inRefillMode ? 2 : 3, false, false, !inRefillMode);
     // junction -> second junction (1218,967): normal-ops continuation toward the ponds
     drawWorldPolyline([{x:814,y:967},{x:1218,y:967}],
         inRefillMode ? IDLE_COLOR : TREATED_COLOR, inRefillMode ? 2 : 3, true, false, !inRefillMode);
@@ -1634,7 +1638,7 @@ function drawSimStatusOverlay() {
 
     fill(205, 211, 217);
     textStyle(NORMAL);
-    textSize(15);
+    textSize(14);
     text(currentOpsStatusText(), tl.x + 18, tl.y + 54, w - 36, h - 64);
     pop();
 }
