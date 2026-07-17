@@ -223,6 +223,11 @@
         <input id="tetraCapacityInput" type="number" value="31000" min="1000" max="100000" step="1000">
     </div>
 
+    <div class="field">
+        <label>Price per bbl ($)</label>
+        <input id="pricePerBblInput" type="number" value="2.00" min="0" max="100" step="0.05">
+    </div>
+
     <div class="toolbar-buttons">
         <button id="applySettingsBtn">Apply Settings</button>
         <button id="replayBtn">Replay Sim</button>
@@ -325,7 +330,8 @@ const READOUT_NUMBER_COLOR = "#7dd3fc";
 
 // Volumes and economics
 const TRUCK_SIZE_BBL       = 100;
-const PRICE_PER_BBL        = 2.00;
+const PRICE_PER_BBL_DEFAULT = 2.00;
+let pricePerBbl            = PRICE_PER_BBL_DEFAULT; // adjustable via the Price per bbl input
 const MAX_LANE_CAPACITY    = 2400;           // bbl/day/lane at 100%
 
 // Weir Tank Storage: 6 tanks x 500 bbl acting as one shared pool feeding both truck connections
@@ -432,6 +438,11 @@ let storageVolume     = STORAGE_CAPACITY;
 let inRefillMode      = false;
 let lowestVolumeToday = STORAGE_CAPACITY;
 let lowestVolumeTime  = 0;
+
+// True only when the day genuinely finished on its own (trucks drained AND
+// the tank topped back off) -- not when the user just hits Stop mid-day.
+// Drives the end-of-day summary overlay.
+let simComplete = false;
 
 // Eases toward storageVolume every frame instead of snapping, so the level
 // readout ticks up/down like a game score counter rather than jump-cutting.
@@ -557,7 +568,7 @@ function currentOpsStatusText() {
         if (inRefillMode) return "Trucks done for the day — topping off Weir Tank Storage";
         const trucksLeft = queueTrucks.length + activeTrucks.length + (arrivalTruck ? 1 : 0);
         if (trucksLeft > 0) return "Trucks done for the day — finishing the last few loads";
-        return "Brine tank refill";
+        return "Brine tank refilled";
     }
 
     if (inRefillMode) return "Refilling Weir Tank Storage from 45k AST";
@@ -764,6 +775,9 @@ function applySettings() {
     tetraCapacityBblPerDay = isNaN(tetraInput) || tetraInput <= 0 ? TETRA_CAPACITY_DEFAULT : tetraInput;
     tetraRateBblPerMin = tetraCapacityBblPerDay / 1440;
 
+    const priceInput = Number(document.getElementById("pricePerBblInput").value);
+    pricePerBbl = isNaN(priceInput) || priceInput < 0 ? PRICE_PER_BBL_DEFAULT : priceInput;
+
     resetSimulation();
 }
 
@@ -809,6 +823,7 @@ function initState() {
     activeTrucks    = [];
     bblPopups       = [];
     nextPondPopupMs = 0;
+    simComplete     = false;
 
     laneNextAvailable = [...laneInitialAvailable];
 
@@ -1476,6 +1491,107 @@ function drawScene() {
 
     // ===== clock + plain-English status, on top of everything =====
     drawSimStatusOverlay();
+
+    // ===== end-of-day results screen, on top of literally everything =====
+    drawEndOfDaySummaryOverlay();
+}
+
+// Video-game "results screen": pops up over the whole canvas once the day
+// has genuinely finished (trucks drained AND the tank topped back off, not
+// just a manual Stop). Screen-space, not world-mapped, so it always covers
+// the full visible canvas regardless of the PFD's own coordinate system.
+function drawEndOfDaySummaryOverlay() {
+    if (!simComplete) return;
+
+    const designTotal = MAX_LANE_CAPACITY * laneCount;
+    const actualUtil  = designTotal > 0 ? (currentTotalBbl / designTotal) * 100 : 0;
+    const revenue     = currentTotalBbl * pricePerBbl;
+    const lowestPct   = (lowestVolumeToday / STORAGE_CAPACITY) * 100;
+
+    const stats = [
+        { label: "TRUCKS LOADED", value: completedCount.toLocaleString(),                                  color: "#4ade80" },
+        { label: "BARRELS SOLD",  value: currentTotalBbl.toLocaleString() + " bbl",                        color: "#7dd3fc" },
+        { label: "REVENUE",       value: "$" + revenue.toLocaleString(undefined, { maximumFractionDigits: 0 }), color: "#fbbf24" },
+        { label: "UTILIZATION",   value: actualUtil.toFixed(1) + "%",                                      color: "#c9a06b" },
+    ];
+
+    push();
+    rectMode(CORNER);
+    textAlign(CENTER, CENTER);
+
+    // dim the whole facility behind the card
+    noStroke();
+    fill(0, 0, 0, 180);
+    rect(0, 0, width, height);
+
+    const cardW = Math.min(520, width - 80);
+    const cardH = 400;
+    const cx = width / 2, cy = height / 2;
+    const cardX = cx - cardW / 2, cardY = cy - cardH / 2;
+
+    stroke(READOUT_NUMBER_COLOR);
+    strokeWeight(2.5);
+    fill(12, 14, 18, 250);
+    rect(cardX, cardY, cardW, cardH, 16);
+
+    // title
+    noStroke();
+    textFont("'Courier New', Consolas, monospace");
+    textStyle(BOLD);
+    fill(READOUT_NUMBER_COLOR);
+    textSize(34);
+    text("DAY COMPLETE", cx, cardY + 50);
+    textFont("sans-serif");
+
+    fill(190, 196, 202);
+    textStyle(NORMAL);
+    textSize(13);
+    text("Weir Tank Storage topped back off", cx, cardY + 80);
+
+    stroke(60, 66, 74);
+    strokeWeight(1);
+    line(cardX + 40, cardY + 102, cardX + cardW - 40, cardY + 102);
+
+    // 2x2 stat grid
+    noStroke();
+    const gridTop = cardY + 112, gridH = 190, colW = cardW / 2, rowH = gridH / 2;
+    for (let i = 0; i < stats.length; i++) {
+        const col = i % 2, row = Math.floor(i / 2);
+        const sx = cardX + colW * col + colW / 2;
+        const sy = gridTop + rowH * row + rowH / 2;
+
+        fill(150, 158, 168);
+        textStyle(BOLD);
+        textSize(11);
+        text(stats[i].label, sx, sy - 18);
+
+        textFont("'Courier New', Consolas, monospace");
+        fill(stats[i].color);
+        textStyle(BOLD);
+        textSize(26);
+        text(stats[i].value, sx, sy + 10);
+        textFont("sans-serif");
+    }
+
+    stroke(60, 66, 74);
+    strokeWeight(1);
+    line(cardX + 40, gridTop + gridH + 8, cardX + cardW - 40, gridTop + gridH + 8);
+
+    // footer details + a nudge toward replaying
+    noStroke();
+    fill(140, 148, 158);
+    textStyle(NORMAL);
+    textSize(12);
+    text(
+        `Lowest level today: ${lowestVolumeToday.toFixed(0)} bbl (${lowestPct.toFixed(0)}%) at ${minutesToClock12(lowestVolumeTime)}`,
+        cx, gridTop + gridH + 30
+    );
+
+    fill(110, 118, 128);
+    textSize(11);
+    text("Click Replay Sim to run again", cx, cardY + cardH - 22);
+
+    pop();
 }
 
 // Clock + a one-line summary of the current phase, for anyone opening the
@@ -1540,7 +1656,7 @@ function updateSummary() {
 
     const designTotal  = MAX_LANE_CAPACITY * laneCount;
     const actualUtil   = (currentTotalBbl / designTotal) * 100;
-    const revenue      = currentTotalBbl * PRICE_PER_BBL;
+    const revenue      = currentTotalBbl * pricePerBbl;
     const bblPerHr     = currentTotalBbl / WORK_HOURS;
 
     el.textContent =
@@ -1646,6 +1762,7 @@ function draw() {
         // actually over; otherwise keep running however long that takes.
         const trucksClear = queueTrucks.length === 0 && activeTrucks.length === 0 && !arrivalTruck;
         if (trucksClear && !inRefillMode) {
+            simComplete = true;
             noLoop();
         }
     }
