@@ -219,8 +219,8 @@
     </div>
 
     <div class="field">
-        <label>Tetra Treatment Capacity (bbl/day)</label>
-        <input id="tetraCapacityInput" type="number" value="30000" min="1000" max="100000" step="1000">
+        <label>Tetra Treatment Throughput (bbl/day)</label>
+        <input id="tetraCapacityInput" type="number" value="31000" min="1000" max="100000" step="1000">
     </div>
 
     <div class="toolbar-buttons">
@@ -313,7 +313,7 @@ const STORAGE_LOW_THRESHOLD = 1200;
 
 // Tetra Treatment's rate when it IS feeding Weir Tank Storage (refill mode --
 // see below). The rest of the day its output goes to Pond B / Pond C instead.
-const TETRA_CAPACITY_DEFAULT = 30000; // bbl/day
+const TETRA_CAPACITY_DEFAULT = 31000; // bbl/day
 
 // 45k AST: the actual brine feedstock source behind truck sales (refilled from
 // Strata on a much longer timescale than the intraday Weir Tank refill -- this
@@ -912,7 +912,7 @@ function updateTankHUD_HTML() {
                 <div class="panel-title" style="margin-bottom:6px;">Tetra Treatment</div>
                 <div style="color:var(--text-dim, #8f99a3);">
                     ${inRefillMode
-                        ? `Routing to Weir Tank Storage at ${tetraRateBblPerMin.toFixed(1)} bbl/min (${tetraCapacityBblPerDay.toLocaleString()} bbl/day capacity)`
+                        ? `Routing to Weir Tank Storage at ${tetraRateBblPerMin.toFixed(1)} bbl/min (${tetraCapacityBblPerDay.toLocaleString()} bbl/day throughput)`
                         : `Routing to Pond B / Pond C (normal ops)`}
                 </div>
                 <div style="margin-top:6px; color:var(--text-dim, #8f99a3);">
