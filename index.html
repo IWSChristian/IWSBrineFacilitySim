@@ -365,6 +365,7 @@ const AST_60K         = { cx: 175, cy: 536, r: 103 };
 const AST_45K         = { cx: 626, cy: 536, r: 103 };
 const ELEC_PUMP       = { top: {x:401,y:438}, right:{x:476,y:495}, bottom:{x:401,y:552}, left:{x:326,y:495} };
 const POND_A          = { x: 912, y: 353, w: 300, h: 328 };           // right 1212, bottom 681
+const SIM_STATUS_BOX  = { x: 920, y: 20, w: 285, h: 175 };            // clock + status, in the open space above Pond A
 const POND_B          = { x: 1315, y: 353, w: 665, h: 328 };          // right 1980, bottom 681
 const POND_B_INLET    = { x: 1385, y: 619 };                          // just inside Pond B, near where the pipe enters
 const POND_C          = { x: 1315, y: 708, w: 665, h: 328 };          // right 1980, bottom 1036
@@ -679,10 +680,12 @@ function settleFinishedLoads() {
     bblPopups = bblPopups.filter(p => millis() - p.spawnMs < POPUP_DURATION_MS);
 }
 
-// Periodic "+X bbl" callout at Pond B, showing how much treated water Tetra
-// is actually adding -- ticks on a fixed real-time cadence and scales
-// automatically with the Tetra Treatment Throughput setting. Only fires in
-// normal ops, since Pond B isn't receiving flow while in refill mode.
+// Periodic "+X bbls / Y min" callout at Pond B, showing how much treated
+// water Tetra is actually adding, and over what simulated timeframe (it's
+// tied to the animation's real-time cadence, so the "min" here is simulated
+// minutes, not wall-clock time) -- ticks automatically and scales with the
+// Tetra Treatment Throughput setting. Only fires in normal ops, since Pond B
+// isn't receiving flow while in refill mode.
 let nextPondPopupMs = 0;
 
 function updatePondPopups() {
@@ -690,10 +693,11 @@ function updatePondPopups() {
     const t = millis();
     if (t < nextPondPopupMs) return;
 
-    const bblThisTick = Math.round(tetraRateBblPerMin * SIM_MIN_PER_REAL_SEC * (POND_POPUP_INTERVAL_MS / 1000));
+    const simMinPerTick = SIM_MIN_PER_REAL_SEC * (POND_POPUP_INTERVAL_MS / 1000);
+    const bblThisTick   = Math.round(tetraRateBblPerMin * simMinPerTick);
     bblPopups.push({
         x: POND_B_INLET.x, y: POND_B_INLET.y, spawnMs: t,
-        text: `+${bblThisTick.toLocaleString()} bbl`, color: TREATED_POPUP_COLOR
+        text: `+${bblThisTick.toLocaleString()} bbls / ${simMinPerTick} min`, color: TREATED_POPUP_COLOR
     });
     nextPondPopupMs = t + POND_POPUP_INTERVAL_MS;
 }
@@ -1482,21 +1486,22 @@ function drawScene() {
     drawSimStatusOverlay();
 }
 
-// Fixed screen-space HUD (not world-mapped) in the top-left corner: clock +
-// a one-line summary of the current phase, for anyone opening the sim cold.
-// Kept small and tight to the very top edge -- the queue/truck lane sits
-// just below it (screen y ~56+), and the Weir Tank column starts around
-// screen x ~350, so this has to fit in that narrow strip without spilling
-// into either.
+// Clock + a one-line summary of the current phase, for anyone opening the
+// sim cold. Lives in the open space directly right of the Weir Tank Level
+// readout, above Pond A -- world-mapped like every other node here (rather
+// than a tiny fixed screen-space badge) so there's real room for legible,
+// non-blurry text instead of tiny cramped font sizes.
 function drawSimStatusOverlay() {
-    const x = 14, y = 12, w = 260, h = 40;
+    const tl = worldToScreen(SIM_STATUS_BOX.x, SIM_STATUS_BOX.y);
+    const br = worldToScreen(SIM_STATUS_BOX.x + SIM_STATUS_BOX.w, SIM_STATUS_BOX.y + SIM_STATUS_BOX.h);
+    const w  = br.x - tl.x, h = br.y - tl.y;
 
     push();
     rectMode(CORNER);
     stroke(60, 66, 74);
     strokeWeight(1);
     fill(9, 11, 14, 225);
-    rect(x, y, w, h, 8);
+    rect(tl.x, tl.y, w, h, 10);
 
     noStroke();
     textAlign(LEFT, TOP);
@@ -1504,14 +1509,14 @@ function drawSimStatusOverlay() {
     textFont("'Courier New', Consolas, monospace");
     textStyle(BOLD);
     fill(READOUT_NUMBER_COLOR);
-    textSize(15);
-    text(minutesToClock12(simMinutes), x + 10, y + 5);
+    textSize(h * 0.16);
+    text(minutesToClock12(simMinutes), tl.x + 14, tl.y + h * 0.08);
     textFont("sans-serif");
 
-    fill(190, 196, 202);
+    fill(200, 206, 212);
     textStyle(NORMAL);
-    textSize(9.5);
-    text(currentOpsStatusText(), x + 10, y + 23, w - 20, h - 25);
+    textSize(h * 0.085);
+    text(currentOpsStatusText(), tl.x + 14, tl.y + h * 0.34, w - 28, h * 0.6);
     pop();
 }
 
