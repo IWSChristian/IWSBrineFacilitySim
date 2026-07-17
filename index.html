@@ -351,7 +351,7 @@ const WORLD_Y_MAX = 1390;
 
 // ===== Real PFD node geometry (parsed from the SVG) =====
 const WEIR_TANK       = { x: 613, y: 1,   w: 160, h: 352 };           // right 773, bottom 353
-const WEIR_READOUT    = { x: 790, y: 1,   w: 105, h: 352 };           // digital level readout, in the gap before Pond A
+const WEIR_READOUT    = { x: 778, y: 1,   w: 129, h: 352 };           // digital level readout, fills almost the whole gap before Pond A
 const AST_60K         = { cx: 175, cy: 536, r: 103 };
 const AST_45K         = { cx: 626, cy: 536, r: 103 };
 const ELEC_PUMP       = { top: {x:401,y:438}, right:{x:476,y:495}, bottom:{x:401,y:552}, left:{x:326,y:495} };
@@ -605,7 +605,12 @@ function updateRefills(dtMinutes) {
 }
 
 /**
- * Process completed trucks:
+ * Settle each truck exactly once, right as it starts pulling out -- that's
+ * the real moment the load is complete and the 100 bbl has left the tank
+ * (the loading arm is done; the remaining pull-out is just the truck
+ * physically driving away), not when it fully leaves the bay. This is also
+ * the moment the "-100 bbls" callout spawns, so the level, the truck count,
+ * and the callout all react together instead of the number lagging behind:
  * - Subtract 100 bbl from the shared storage pool (fixed per truck, independent of utilization)
  * - If volume drops to <= 1200 bbl, switch into refill mode (45k AST -> Tetra
  *   -> Weir Tank Storage) if not already in it.
@@ -613,29 +618,38 @@ function updateRefills(dtMinutes) {
  * Loading is only ever blocked by insufficient volume (checked in updateLanesAndQueue),
  * never by refilling -- refilling and loadout run concurrently.
  */
-function processCompletedTrucks() {
-    const remaining = [];
+function settleFinishedLoads() {
     for (const tr of activeTrucks) {
-        if (simMinutes >= tr.end) {
-            // Fixed draw: 100 bbl per truck, regardless of utilization
-            storageVolume -= TRUCK_SIZE_BBL;
-            if (storageVolume < 0) storageVolume = 0;
-            completedCount++;
+        if (tr.settled) continue;
+        const phase = simMinutes - tr.start;
+        if (phase < BACK_IN_MIN + LOAD_MIN) continue;
 
-            if (!inRefillMode && storageVolume <= STORAGE_LOW_THRESHOLD) {
-                inRefillMode = true;
-            }
+        tr.settled = true;
 
-            if (storageVolume < lowestVolumeToday) {
-                lowestVolumeToday = storageVolume;
-                lowestVolumeTime  = tr.end;
-            }
+        // Fixed draw: 100 bbl per truck, regardless of utilization
+        storageVolume -= TRUCK_SIZE_BBL;
+        if (storageVolume < 0) storageVolume = 0;
+        completedCount++;
 
-        } else {
-            remaining.push(tr);
+        if (!inRefillMode && storageVolume <= STORAGE_LOW_THRESHOLD) {
+            inRefillMode = true;
         }
+
+        if (storageVolume < lowestVolumeToday) {
+            lowestVolumeToday = storageVolume;
+            lowestVolumeTime  = simMinutes;
+        }
+
+        const pad = padPositions[tr.lane];
+        bblPopups.push({ x: pad.x, y: pad.y, spawnMs: millis() });
     }
-    activeTrucks = remaining;
+    bblPopups = bblPopups.filter(p => millis() - p.spawnMs < POPUP_DURATION_MS);
+}
+
+// Cleanup only -- the truck's economics were already settled the moment it
+// started pulling out; this just drops it once it's fully driven off.
+function removeFinishedTrucks() {
+    activeTrucks = activeTrucks.filter(tr => simMinutes < tr.end);
 }
 
 /**
@@ -668,27 +682,13 @@ function updateLanesAndQueue() {
             start,
             end,
             startX: queueSlotX(0),
-            popupShown: false
+            settled: false
         });
 
         // Lane becomes free again after this truck, unless
-        // later overridden by a refill scheduled in processCompletedTrucks().
+        // later overridden by a refill scheduled in settleFinishedLoads().
         laneNextAvailable[lane] = end;
     }
-}
-
-// Spawn a "-100 bbls" callout exactly once per truck, right as it starts
-// pulling out of the bay -- then expire callouts once their animation ends.
-function updateBblPopups() {
-    for (const tr of activeTrucks) {
-        const phase = simMinutes - tr.start;
-        if (!tr.popupShown && phase >= BACK_IN_MIN + LOAD_MIN) {
-            const pad = padPositions[tr.lane];
-            bblPopups.push({ x: pad.x, y: pad.y, spawnMs: millis() });
-            tr.popupShown = true;
-        }
-    }
-    bblPopups = bblPopups.filter(p => millis() - p.spawnMs < POPUP_DURATION_MS);
 }
 
 function applySettings() {
@@ -1525,9 +1525,9 @@ function draw() {
     updateRefills(dtMinutes);
     maybeSpawnArrival();
     updateArrival();
-    processCompletedTrucks();
+    settleFinishedLoads();
     updateLanesAndQueue();
-    updateBblPopups();
+    removeFinishedTrucks();
     displayedStorageVolume += (storageVolume - displayedStorageVolume) * 0.12;
 
     currentTotalBbl = completedCount * TRUCK_SIZE_BBL;
