@@ -557,7 +557,7 @@ function currentOpsStatusText() {
         if (inRefillMode) return "Trucks done for the day — topping off Weir Tank Storage";
         const trucksLeft = queueTrucks.length + activeTrucks.length + (arrivalTruck ? 1 : 0);
         if (trucksLeft > 0) return "Trucks done for the day — finishing the last few loads";
-        return "Wrapping up for the day";
+        return "Brine tank refill";
     }
 
     if (inRefillMode) return "Refilling Weir Tank Storage from 45k AST";
