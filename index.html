@@ -367,7 +367,7 @@ const WORLD_Y_MIN = 0;
 const WORLD_Y_MAX = 1390;
 
 // ===== Real PFD node geometry (parsed from the SVG) =====
-const WEIR_TANK       = { x: 613, y: 1,   w: 160, h: 352 };           // right 773, bottom 353
+const WEIR_TANK       = { x: 613, y: 1,   w: 140, h: 352 };           // right 753, bottom 353 -- narrowed to leave a real gap before the readout
 const WEIR_READOUT    = { x: 778, y: 1,   w: 129, h: 352 };           // digital level readout, fills almost the whole gap before Pond A
 const AST_60K         = { cx: 175, cy: 536, r: 103 };
 const AST_45K         = { cx: 626, cy: 536, r: 103 };
@@ -1447,7 +1447,7 @@ function drawScene() {
     drawWorldPolyline([{x:613,y:967},{x:814,y:967}],
         TREATED_COLOR, 3, true, false, true);
     // junction -> Weir Tank Storage (refill-mode branch, idle otherwise)
-    drawWorldPolyline([{x:814,y:967},{x:814,y:183},{x:773,y:183}],
+    drawWorldPolyline([{x:814,y:967},{x:814,y:183},{x:753,y:183}],
         inRefillMode ? TREATED_COLOR : IDLE_COLOR, inRefillMode ? 3 : 2, true, false, inRefillMode);
     // junction -> second junction (1218,967): normal-ops continuation toward the ponds
     drawWorldPolyline([{x:814,y:967},{x:1218,y:967}],
@@ -1748,12 +1748,10 @@ function draw() {
 
     currentTotalBbl = completedCount * TRUCK_SIZE_BBL;
 
-    drawScene();
-    updateSimTimeText();
-    updateStatsText();
-    updateTankHUD_HTML();
-    updateSummary();
-
+    // Decide completion BEFORE drawing this frame -- otherwise simComplete
+    // flips true only after drawScene() already rendered without it, and
+    // the noLoop() right after means that frame (with the overlay) never
+    // gets painted at all.
     if (simMinutes >= TOTAL_MIN) {
         // Trucks done for the day (arrivals already stopped at TOTAL_MIN --
         // this just confirms the queue/bays have actually emptied out), and
@@ -1763,10 +1761,16 @@ function draw() {
         const trucksClear = queueTrucks.length === 0 && activeTrucks.length === 0 && !arrivalTruck;
         if (trucksClear && !inRefillMode) {
             simComplete = true;
-            noLoop();
         }
     }
-    if (simMinutes >= SIM_SAFETY_CAP_MIN) {
+
+    drawScene();
+    updateSimTimeText();
+    updateStatsText();
+    updateTankHUD_HTML();
+    updateSummary();
+
+    if (simComplete || simMinutes >= SIM_SAFETY_CAP_MIN) {
         noLoop();
     }
 }
