@@ -345,6 +345,7 @@ const WORLD_Y_MAX = 1390;
 
 // ===== Real PFD node geometry (parsed from the SVG) =====
 const WEIR_TANK       = { x: 613, y: 1,   w: 160, h: 352 };           // right 773, bottom 353
+const WEIR_READOUT    = { x: 790, y: 1,   w: 105, h: 352 };           // digital level readout, in the gap before Pond A
 const AST_60K         = { cx: 175, cy: 536, r: 103 };
 const AST_45K         = { cx: 626, cy: 536, r: 103 };
 const ELEC_PUMP       = { top: {x:401,y:438}, right:{x:476,y:495}, bottom:{x:401,y:552}, left:{x:326,y:495} };
@@ -897,6 +898,15 @@ function ast45kDaysUntilRefill() {
     return usableVol / dailyBbl;
 }
 
+// Single source of truth for the Weir Tank Storage status color, shared by
+// the canvas tank/readout and the HTML HUD card so they never drift apart.
+function weirTankStatusColor() {
+    if (storageVolume < TRUCK_SIZE_BBL) return "#f87171"; // red -- can't load a truck right now
+    if (inRefillMode) return "#fb923c";                   // orange -- actively refilling, not a problem
+    if (storageVolume <= STORAGE_LOW_THRESHOLD) return "#fbbf24"; // yellow -- low
+    return "#4ade80";                                     // green -- healthy
+}
+
 function updateTankHUD_HTML() {
     const hud = document.getElementById("tankHUD");
     if (!hud) return;
@@ -905,18 +915,15 @@ function updateTankHUD_HTML() {
     const vol  = storageVolume;
     const frac = Math.max(0, Math.min(1, vol / STORAGE_CAPACITY));
 
-    let barColor, statusText;
+    const barColor = weirTankStatusColor();
+    let statusText;
     if (vol < TRUCK_SIZE_BBL) {
-        barColor   = "#f87171"; // red -- can't load a truck right now
         statusText = "Insufficient volume to load";
     } else if (inRefillMode) {
-        barColor   = "#fb923c"; // orange -- actively refilling from 45k AST (normal, not a problem)
         statusText = `Refilling from 45k AST (${tetraRateBblPerMin.toFixed(1)} bbl/min)`;
     } else if (vol <= STORAGE_LOW_THRESHOLD) {
-        barColor   = "#fbbf24"; // yellow -- low, refill should be kicking in
         statusText = "Low volume";
     } else {
-        barColor   = "#4ade80"; // green -- healthy, draining only
         statusText = "Online";
     }
 
@@ -1115,11 +1122,7 @@ function drawWeirTankNode() {
     const tankH = ((tankBottom - tankTop) - gap * (n - 1)) / n;
     const perTankCapacity = STORAGE_CAPACITY / n; // 500 bbl per tank
 
-    let statusColor;
-    if (storageVolume < TRUCK_SIZE_BBL) statusColor = "#f87171"; // red -- genuinely can't load a truck
-    else if (inRefillMode) statusColor = "#fb923c"; // orange -- actively refilling, not a problem
-    else if (storageVolume <= STORAGE_LOW_THRESHOLD) statusColor = "#fbbf24";
-    else statusColor = "#4ade80";
+    const statusColor = weirTankStatusColor();
 
     // box outline (no text label on this one, per facility request)
     const tl = worldToScreen(WEIR_TANK.x, WEIR_TANK.y);
@@ -1174,6 +1177,78 @@ function drawWeirTankNode() {
         const b = worldToScreen(tankLeft + tankWidth, ty + tankH);
         rect(a.x, a.y, b.x - a.x, b.y - a.y);
     }
+}
+
+// Digital gauge-style readout next to the Weir Tank, showing current level,
+// total capacity, and the refill trigger level in one glance.
+function drawWeirTankLevelReadout() {
+    const tl = worldToScreen(WEIR_READOUT.x, WEIR_READOUT.y);
+    const br = worldToScreen(WEIR_READOUT.x + WEIR_READOUT.w, WEIR_READOUT.y + WEIR_READOUT.h);
+    const w  = br.x - tl.x, h = br.y - tl.y, cx = tl.x + w / 2;
+    const statusColor = weirTankStatusColor();
+    const pct = Math.round((storageVolume / STORAGE_CAPACITY) * 100);
+
+    push();
+    rectMode(CORNER);
+
+    // panel
+    stroke(statusColor);
+    strokeWeight(2);
+    fill(14, 17, 20, 235);
+    rect(tl.x, tl.y, w, h, 10);
+
+    noStroke();
+    textAlign(CENTER, CENTER);
+
+    // label, in the diagram's normal font
+    fill(143, 153, 163);
+    textStyle(BOLD);
+    textSize(11);
+    text("WEIR TANK", cx, tl.y + h * 0.09);
+    text("LEVEL", cx, tl.y + h * 0.09 + 14);
+
+    // digit readouts get a monospace face -- tabular, unmistakably "gauge"
+    // rather than body copy -- restored to the default font at the end.
+    textFont("'Courier New', Consolas, monospace");
+
+    // big current-level number, the focal point of the readout
+    fill(statusColor);
+    textStyle(BOLD);
+    textSize(w * 0.30);
+    text(Math.round(storageVolume).toLocaleString(), cx, tl.y + h * 0.36);
+
+    textFont("sans-serif");
+
+    // capacity + percent full
+    fill(180, 188, 196);
+    textStyle(NORMAL);
+    textSize(12);
+    text(`of ${STORAGE_CAPACITY.toLocaleString()} bbl`, cx, tl.y + h * 0.50);
+    fill(120, 128, 138);
+    textSize(11);
+    text(`${pct}% full`, cx, tl.y + h * 0.565);
+
+    // divider
+    stroke(60, 66, 74);
+    strokeWeight(1);
+    line(tl.x + 12, tl.y + h * 0.68, br.x - 12, tl.y + h * 0.68);
+
+    // refill trigger level
+    noStroke();
+    fill(251, 191, 36);
+    textStyle(BOLD);
+    textSize(11);
+    text("REFILL AT", cx, tl.y + h * 0.78);
+    textFont("'Courier New', Consolas, monospace");
+    textSize(19);
+    text(`${STORAGE_LOW_THRESHOLD.toLocaleString()}`, cx, tl.y + h * 0.865);
+    textFont("sans-serif");
+    textStyle(NORMAL);
+    textSize(11);
+    fill(180, 150, 90);
+    text("bbl", cx, tl.y + h * 0.925);
+
+    pop();
 }
 
 function drawTruckConnNode() {
@@ -1290,6 +1365,7 @@ function drawScene() {
 
     // ===== Weir Tank Storage + Truck Connections (live state) =====
     drawWeirTankNode();
+    drawWeirTankLevelReadout();
     drawTruckConnNode();
 
     // ===== the live truck simulation, happening at the real Truck Connections bays =====
