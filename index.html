@@ -442,6 +442,12 @@ function worldToScreen(x, y) {
 }
 
 // Interpolate along a polyline
+// Smooth acceleration/deceleration instead of constant velocity, so trucks
+// ease into and out of motion rather than snapping to a linear crawl.
+function easeInOutCubic(t) {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
 function interpolatePolylinePose(points, frac) {
     if (points.length === 1) {
         return { x: points[0].x, y: points[0].y, dx: 0, dy: 1 };
@@ -535,7 +541,7 @@ function maybeSpawnArrival() {
 function arrivalPose(tMin, arrival) {
     const t = tMin - arrival.startSim;
     if (t < 0 || t > ARRIVAL_TRAVEL_MIN) return null;
-    const frac = t / ARRIVAL_TRAVEL_MIN;
+    const frac = easeInOutCubic(t / ARRIVAL_TRAVEL_MIN);
 
     // Straight drive-in along the queue's row -- no direction change needed
     // since the whole line sits on one fixed Y.
@@ -738,7 +744,7 @@ function truckPose(tMin, truck) {
             { x: BAY_ENTRY_X, y: pad.y },
             { x: pad.x,        y: pad.y }
         ];
-        const frac = phase / BACK_IN_MIN;
+        const frac = easeInOutCubic(phase / BACK_IN_MIN);
         const p    = interpolatePolylinePose(pts, frac);
         // Backing in is reverse travel: the truck doesn't spin to face the
         // bay, its nose stays pointed the way it's already facing (same as
@@ -754,7 +760,7 @@ function truckPose(tMin, truck) {
 
     const routeList = exitRoutes[lane];
     const phase2    = phase - (BACK_IN_MIN + LOAD_MIN);
-    const frac2     = phase2 / PULL_OUT_MIN;
+    const frac2     = easeInOutCubic(phase2 / PULL_OUT_MIN);
     const p         = interpolatePolylinePose(routeList, frac2);
     return { x: p.x, y: p.y, angle: Math.atan2(p.dy, p.dx) };
 }
@@ -935,7 +941,23 @@ function drawArrowHead(sx, sy, angle, col) {
     pop();
 }
 
-function drawWorldPolyline(points, col, weight, withArrow, dashed) {
+// Small dots traveling along a pipe, real-time (not sim-time) so they read
+// as continuous flow regardless of simulation speed or pause state.
+function drawFlowParticles(points, col) {
+    const t = millis();
+    const count = 3;
+    const cycleMs = 2200;
+    noStroke();
+    fill(col);
+    for (let i = 0; i < count; i++) {
+        const frac = ((t / cycleMs) + i / count) % 1;
+        const p = interpolatePolylinePose(points, frac);
+        const s = worldToScreen(p.x, p.y);
+        ellipse(s.x, s.y, 5, 5);
+    }
+}
+
+function drawWorldPolyline(points, col, weight, withArrow, dashed, animated) {
     stroke(col);
     strokeWeight(weight);
     noFill();
@@ -955,6 +977,8 @@ function drawWorldPolyline(points, col, weight, withArrow, dashed) {
         const sb = worldToScreen(b.x, b.y);
         drawArrowHead(sb.x, sb.y, Math.atan2(sb.y - sa.y, sb.x - sa.x), col);
     }
+
+    if (animated) drawFlowParticles(points, col);
 }
 
 function drawTextLines(lines, cx, cy, fontSize, col) {
@@ -1041,6 +1065,21 @@ function drawWeirTankNode() {
     // box outline (no text label on this one, per facility request)
     const tl = worldToScreen(WEIR_TANK.x, WEIR_TANK.y);
     const br = worldToScreen(WEIR_TANK.x + WEIR_TANK.w, WEIR_TANK.y + WEIR_TANK.h);
+
+    // pulsing glow while actively refilling, so the tank reads as "busy"
+    if (inRefillMode) {
+        const pulse = 0.5 + 0.5 * Math.sin(millis() / 400);
+        const c = color(statusColor);
+        push();
+        noFill();
+        for (let g = 3; g >= 1; g--) {
+            stroke(red(c), green(c), blue(c), 55 * pulse / g);
+            strokeWeight(2 + g * 3);
+            rect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
+        }
+        pop();
+    }
+
     stroke(statusColor);
     strokeWeight(2);
     noFill();
@@ -1057,9 +1096,12 @@ function drawWeirTankNode() {
 
         const ty = tankTop + i * (tankH + gap);
 
-        // fill, behind the outline
+        // fill, behind the outline -- a gentle slosh on the liquid surface,
+        // strongest on the one cell actually mid-drain/fill and ~0 on cells
+        // that are fully empty or fully full (nothing there to slosh)
         const fillH = cellFrac * tankH;
-        const fTL = worldToScreen(tankLeft, ty + (tankH - fillH));
+        const slosh = Math.sin(millis() / 450 + i * 0.7) * 1.5 * (cellFrac * (1 - cellFrac) * 4);
+        const fTL = worldToScreen(tankLeft, ty + (tankH - fillH) + slosh);
         const fBR = worldToScreen(tankLeft + tankWidth, ty + tankH);
         noStroke();
         fill(red(color(statusColor)), green(color(statusColor)), blue(color(statusColor)), 110);
@@ -1127,10 +1169,10 @@ function drawScene() {
     const NORMAL_COLOR = "#4ade80", REFILL_COLOR = "#fb923c", IDLE_COLOR = "#5b6470", EXXON_COLOR = "#7dd3fc";
 
     // Exxon/Strata feedstock intake -- continuous, not tied to the mode switch
-    drawWorldPolyline([{x:80,y:1115},{x:80,y:855}], EXXON_COLOR, 3, true);                                     // Exxon -> Influent Riser
-    drawWorldPolyline([{x:850,y:1251},{x:850,y:1098},{x:171,y:1098},{x:171,y:855}], NORMAL_COLOR, 3, true);    // Strata -> Influent Riser
+    drawWorldPolyline([{x:80,y:1115},{x:80,y:855}], EXXON_COLOR, 3, true, false, true);                        // Exxon -> Influent Riser
+    drawWorldPolyline([{x:850,y:1251},{x:850,y:1098},{x:171,y:1098},{x:171,y:855}], NORMAL_COLOR, 3, true, false, true); // Strata -> Influent Riser
     drawWorldPolyline([{x:630,y:1098},{x:656,y:1098},{x:656,y:639}], AST_45K_REFILL_COLOR, 2, true, true);      // Strata branch -> 45k AST (only during periodic refill)
-    drawWorldPolyline([{x:122,y:775},{x:122,y:639}], NORMAL_COLOR, 3, true);                                   // Influent Riser -> 60k AST
+    drawWorldPolyline([{x:122,y:775},{x:122,y:639}], NORMAL_COLOR, 3, true, false, true);                       // Influent Riser -> 60k AST
 
     // 60k AST -> header junction (293,389) -> Electric Pump: the normal-ops
     // feed, idle during refill mode. 60k AST's level is kept steady by Exxon's
@@ -1138,11 +1180,11 @@ function drawScene() {
     // isn't a real scenario -- that Diesel Pump/Pond A path is shown below as
     // plain static piping, not toggled by the mode switch.
     drawWorldPolyline([{x:175,y:433},{x:175,y:389},{x:395,y:389},{x:401,y:438}],
-        inRefillMode ? IDLE_COLOR : NORMAL_COLOR, inRefillMode ? 2 : 3, true);
+        inRefillMode ? IDLE_COLOR : NORMAL_COLOR, inRefillMode ? 2 : 3, true, false, !inRefillMode);
 
     // 45k AST -> Electric Pump: the refill-mode feed, idle otherwise
     drawWorldPolyline([{x:626,y:433},{x:626,y:389},{x:407,y:389},{x:401,y:438}],
-        inRefillMode ? REFILL_COLOR : IDLE_COLOR, inRefillMode ? 3 : 2, true);
+        inRefillMode ? REFILL_COLOR : IDLE_COLOR, inRefillMode ? 3 : 2, true, false, inRefillMode);
 
     // Diesel Pump <-> 60k AST / Pond A: available capability, not an active
     // scenario in this simulation -- always shown as plain structural piping.
@@ -1155,23 +1197,23 @@ function drawScene() {
     // whichever AST is active), routed right of Diesel Pump so it doesn't
     // read as a second box.
     drawWorldPolyline([{x:401,y:552},{x:401,y:660},{x:488,y:660},{x:488,y:865}],
-        inRefillMode ? REFILL_COLOR : NORMAL_COLOR, 3, true);
+        inRefillMode ? REFILL_COLOR : NORMAL_COLOR, 3, true, false, true);
 
     // Tetra -> first junction (814,967): always active -- continues to
     // Pond B/C in normal mode, or turns up to Weir Tank Storage in refill mode.
     drawWorldPolyline([{x:613,y:967},{x:814,y:967}],
-        inRefillMode ? REFILL_COLOR : NORMAL_COLOR, 3, true);
+        inRefillMode ? REFILL_COLOR : NORMAL_COLOR, 3, true, false, true);
     // junction -> Weir Tank Storage (refill-mode branch, idle otherwise)
     drawWorldPolyline([{x:814,y:967},{x:814,y:183},{x:773,y:183}],
-        inRefillMode ? REFILL_COLOR : IDLE_COLOR, inRefillMode ? 3 : 2, true);
+        inRefillMode ? REFILL_COLOR : IDLE_COLOR, inRefillMode ? 3 : 2, true, false, inRefillMode);
     // junction -> second junction (1218,967): normal-ops continuation toward the ponds
     drawWorldPolyline([{x:814,y:967},{x:1218,y:967}],
-        inRefillMode ? IDLE_COLOR : NORMAL_COLOR, inRefillMode ? 2 : 3, true);
+        inRefillMode ? IDLE_COLOR : NORMAL_COLOR, inRefillMode ? 2 : 3, true, false, !inRefillMode);
     // second junction -> Pond B / Pond C
     drawWorldPolyline([{x:1218,y:967},{x:1224,y:659},{x:1296,y:659}],
-        inRefillMode ? IDLE_COLOR : NORMAL_COLOR, inRefillMode ? 2 : 3, true);
+        inRefillMode ? IDLE_COLOR : NORMAL_COLOR, inRefillMode ? 2 : 3, true, false, !inRefillMode);
     drawWorldPolyline([{x:1218,y:967},{x:1224,y:872},{x:1296,y:872}],
-        inRefillMode ? IDLE_COLOR : NORMAL_COLOR, inRefillMode ? 2 : 3, true);
+        inRefillMode ? IDLE_COLOR : NORMAL_COLOR, inRefillMode ? 2 : 3, true, false, !inRefillMode);
 
     // Weir Tank Storage -> Truck Connections: a single trunk line off the tank
     // that splits at a junction into one branch per lane. The trunk lights up
@@ -1181,13 +1223,13 @@ function drawScene() {
     const WEIR_JUNCTION_X = 572;
     const anyLaneLoading = padPositions.some((_, lane) => isLaneLoading(lane));
     drawWorldPolyline([{x:613,y:WEIR_TRUNK_Y},{x:WEIR_JUNCTION_X,y:WEIR_TRUNK_Y}],
-        anyLaneLoading ? "#4ade80" : "#5b6470", anyLaneLoading ? 3 : 2);
+        anyLaneLoading ? "#4ade80" : "#5b6470", anyLaneLoading ? 3 : 2, false, false, anyLaneLoading);
 
     for (let lane = 0; lane < laneCount; lane++) {
         const pad = padPositions[lane];
         const loading = isLaneLoading(lane);
         drawWorldPolyline([{x:WEIR_JUNCTION_X,y:WEIR_TRUNK_Y},{x:WEIR_JUNCTION_X,y:pad.y},{x:pad.x,y:pad.y}],
-            loading ? "#4ade80" : "#5b6470", loading ? 3 : 2, true);
+            loading ? "#4ade80" : "#5b6470", loading ? 3 : 2, true, false, loading);
     }
 
     // ===== Weir Tank Storage + Truck Connections (live state) =====
