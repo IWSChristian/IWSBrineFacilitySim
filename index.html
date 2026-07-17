@@ -197,7 +197,7 @@
 <div class="titlebar">
     <div class="eyebrow">Infinity Water Solutions</div>
     <h2>Brine Loadout Simulation</h2>
-    <div class="subtitle">Startup 6:00 AM &ndash; Trucks 7:00 AM–5:00 PM &ndash; Sim ends 5:30 PM</div>
+    <div class="subtitle">Startup 6:00 AM &ndash; Trucks 7:00 AM&ndash;5:00 PM &ndash; runs until Weir Tank Storage tops back off</div>
 </div>
 
 <!-- ===== PROCESS FLOW NOTES (for viewers unfamiliar with the facility) ===== -->
@@ -290,11 +290,13 @@
 const WORK_HOURS = 10;             // 7am–5pm -- truck arrivals only happen in this window
 const TOTAL_MIN = WORK_HOURS * 60; // 600 minutes
 
-// The sim keeps running 30 min past TOTAL_MIN (until 5:30) so truck traffic
-// can visibly die down and finish draining out of the queue/bays, while
-// Tetra Treatment keeps running to Pond B the whole time.
-const TAIL_MIN    = 30;
-const SIM_END_MIN = TOTAL_MIN + TAIL_MIN;
+// Past TOTAL_MIN, the sim keeps running -- for however long it actually
+// takes -- until truck traffic has fully drained AND (if it was mid-refill)
+// Weir Tank Storage is back to 100%. That's a dynamic length, not a fixed
+// tail, so it never stops looking "unfinished" with the tank partway full.
+// SIM_SAFETY_CAP_MIN is just a backstop against a runaway edge case (e.g.
+// an extreme low Tetra Treatment Throughput setting), not a normal stop.
+const SIM_SAFETY_CAP_MIN = TOTAL_MIN + 1000;
 
 // Startup period: 6-7am, before truck loadout opens. Weir Tank Storage tops
 // off from 45k AST -> Electric Pump -> Tetra -> Weir Tank (the same physical
@@ -549,8 +551,15 @@ function minutesToClock12(mins) {
 // opening the sim cold.
 function currentOpsStatusText() {
     if (simMinutes < 0) return "Startup: topping off Weir Tank Storage from 45k AST";
-    if (simMinutes >= SIM_END_MIN) return "Simulation complete";
-    if (simMinutes >= TOTAL_MIN) return "Trucks done for the day — treatment continues to Pond B";
+
+    if (simMinutes >= TOTAL_MIN) {
+        if (!isLooping()) return "Simulation complete — Weir Tank Storage full";
+        if (inRefillMode) return "Trucks done for the day — topping off Weir Tank Storage";
+        const trucksLeft = queueTrucks.length + activeTrucks.length + (arrivalTruck ? 1 : 0);
+        if (trucksLeft > 0) return "Trucks done for the day — finishing the last few loads";
+        return "Wrapping up for the day";
+    }
+
     if (inRefillMode) return "Refilling Weir Tank Storage from 45k AST";
     return "Normal operations: loading trucks, treating to Pond B";
 }
@@ -1602,7 +1611,7 @@ function setup() {
     document.getElementById("replayBtn").addEventListener("click", resetSimulation);
     document.getElementById("stopBtn").addEventListener("click", noLoop);
     document.getElementById("resumeBtn").addEventListener("click", () => {
-        if (simMinutes < SIM_END_MIN) loop();
+        if (simMinutes < SIM_SAFETY_CAP_MIN) loop();
     });
 }
 
@@ -1610,7 +1619,7 @@ function draw() {
     const dt = deltaTime / 1000.0;
     const dtMinutes = SIM_MIN_PER_REAL_SEC * dt;
     simMinutes += dtMinutes;
-    if (simMinutes >= SIM_END_MIN) simMinutes = SIM_END_MIN;
+    if (simMinutes >= SIM_SAFETY_CAP_MIN) simMinutes = SIM_SAFETY_CAP_MIN;
 
     updateRefills(dtMinutes);
     maybeSpawnArrival();
@@ -1629,7 +1638,18 @@ function draw() {
     updateTankHUD_HTML();
     updateSummary();
 
-    if (simMinutes >= SIM_END_MIN) {
+    if (simMinutes >= TOTAL_MIN) {
+        // Trucks done for the day (arrivals already stopped at TOTAL_MIN --
+        // this just confirms the queue/bays have actually emptied out), and
+        // Weir Tank Storage isn't mid-refill -- either it never needed to be,
+        // or it just finished topping back off to 100%. Only then is the day
+        // actually over; otherwise keep running however long that takes.
+        const trucksClear = queueTrucks.length === 0 && activeTrucks.length === 0 && !arrivalTruck;
+        if (trucksClear && !inRefillMode) {
+            noLoop();
+        }
+    }
+    if (simMinutes >= SIM_SAFETY_CAP_MIN) {
         noLoop();
     }
 }
