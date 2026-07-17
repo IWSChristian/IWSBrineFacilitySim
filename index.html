@@ -312,6 +312,11 @@ const PULL_OUT_MIN = 5;
 const POPUP_DURATION_MS = 1100;
 const POPUP_RISE_PX     = 30;
 
+// Floating "+X bbl" callout at Pond B, ticking on a fixed real-time cadence
+// while Tetra is actively routing to it (normal ops only)
+const POND_POPUP_INTERVAL_MS = 1000;
+const TREATED_POPUP_COLOR    = "#7dd3fc";
+
 // Volumes and economics
 const TRUCK_SIZE_BBL       = 100;
 const PRICE_PER_BBL        = 2.00;
@@ -357,6 +362,7 @@ const AST_45K         = { cx: 626, cy: 536, r: 103 };
 const ELEC_PUMP       = { top: {x:401,y:438}, right:{x:476,y:495}, bottom:{x:401,y:552}, left:{x:326,y:495} };
 const POND_A          = { x: 912, y: 353, w: 300, h: 328 };           // right 1212, bottom 681
 const POND_B          = { x: 1315, y: 353, w: 665, h: 328 };          // right 1980, bottom 681
+const POND_B_INLET    = { x: 1385, y: 619 };                          // just inside Pond B, near where the pipe enters
 const POND_C          = { x: 1315, y: 708, w: 665, h: 328 };          // right 1980, bottom 1036
 const DIESEL_PUMP     = { top: {x:299,y:668}, right:{x:375,y:726}, bottom:{x:299,y:783}, left:{x:224,y:726} };
 const INFLUENT_RISER  = { x: 40, y: 775, w: 160, h: 80, rx: 40 };     // right 200, bottom 855
@@ -641,9 +647,28 @@ function settleFinishedLoads() {
         }
 
         const pad = padPositions[tr.lane];
-        bblPopups.push({ x: pad.x, y: pad.y, spawnMs: millis() });
+        bblPopups.push({ x: pad.x, y: pad.y, spawnMs: millis(), text: "-100 bbls", color: "#f87171" });
     }
     bblPopups = bblPopups.filter(p => millis() - p.spawnMs < POPUP_DURATION_MS);
+}
+
+// Periodic "+X bbl" callout at Pond B, showing how much treated water Tetra
+// is actually adding -- ticks on a fixed real-time cadence and scales
+// automatically with the Tetra Treatment Throughput setting. Only fires in
+// normal ops, since Pond B isn't receiving flow while in refill mode.
+let nextPondPopupMs = 0;
+
+function updatePondPopups() {
+    if (inRefillMode) return;
+    const t = millis();
+    if (t < nextPondPopupMs) return;
+
+    const bblThisTick = Math.round(tetraRateBblPerMin * SIM_MIN_PER_REAL_SEC * (POND_POPUP_INTERVAL_MS / 1000));
+    bblPopups.push({
+        x: POND_B_INLET.x, y: POND_B_INLET.y, spawnMs: t,
+        text: `+${bblThisTick.toLocaleString()} bbl`, color: TREATED_POPUP_COLOR
+    });
+    nextPondPopupMs = t + POND_POPUP_INTERVAL_MS;
 }
 
 // Cleanup only -- the truck's economics were already settled the moment it
@@ -743,6 +768,7 @@ function initState() {
     arrivalTruck    = null;
     activeTrucks    = [];
     bblPopups       = [];
+    nextPondPopupMs = 0;
 
     laneNextAvailable = [...laneInitialAvailable];
 
@@ -872,8 +898,8 @@ function drawActiveTrucks() {
     }
 }
 
-// Video-game-style "-100 bbls" callout: rises and fades out over
-// POPUP_DURATION_MS, right above wherever the truck was parked.
+// Video-game-style floating callout ("-100 bbls" at a truck, "+X bbl" at
+// Pond B): rises and fades out over POPUP_DURATION_MS above its spawn point.
 function drawBblPopups() {
     const t = millis();
     for (const p of bblPopups) {
@@ -881,14 +907,15 @@ function drawBblPopups() {
         const s     = worldToScreen(p.x, p.y);
         const yUp   = frac * POPUP_RISE_PX;
         const alpha = 255 * (1 - frac);
+        const c     = color(p.color);
 
         push();
         noStroke();
-        fill(248, 113, 113, alpha);
+        fill(red(c), green(c), blue(c), alpha);
         textAlign(CENTER, CENTER);
         textStyle(BOLD);
         textSize(17);
-        text("-100 bbls", s.x, s.y - 22 - yUp);
+        text(p.text, s.x, s.y - 22 - yUp);
         pop();
     }
 }
@@ -1223,11 +1250,13 @@ function drawWeirTankLevelReadout() {
     noStroke();
     textAlign(CENTER, CENTER);
 
-    // label
+    // label -- two lines; at this box width a single "WEIR TANK LEVEL" line
+    // measures wider than the panel itself and spills past its edges
     fill(150, 158, 168);
     textStyle(BOLD);
-    textSize(11);
-    text("WEIR TANK LEVEL", cx, tl.y + h * 0.075);
+    textSize(10);
+    text("WEIR TANK", cx, tl.y + h * 0.06);
+    text("LEVEL", cx, tl.y + h * 0.06 + 12);
 
     // big glowing number -- the HUD focal point
     textFont("'Courier New', Consolas, monospace");
@@ -1528,6 +1557,7 @@ function draw() {
     settleFinishedLoads();
     updateLanesAndQueue();
     removeFinishedTrucks();
+    updatePondPopups();
     displayedStorageVolume += (storageVolume - displayedStorageVolume) * 0.12;
 
     currentTotalBbl = completedCount * TRUCK_SIZE_BBL;
