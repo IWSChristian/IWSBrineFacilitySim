@@ -1,4 +1,5 @@
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5">
     <title>Infinity Water Solutions – Brine Facility Simulation</title>
     <style>
         :root {
@@ -25,6 +26,9 @@
             margin: 0;
             padding: 20px;
         }
+        @media (max-width: 600px) {
+            body { padding: 10px; }
+        }
 
         .page {
             max-width: 1280px;
@@ -32,7 +36,12 @@
             display: flex;
             flex-direction: column;
             gap: 16px;
+            width: 100%;
         }
+        /* Same min-width:auto default as the grid above, but for a column
+           flex container -- without it the canvas's intrinsic width can
+           still push this whole column (and the page) wider. */
+        .page > * { min-width: 0; }
 
         h2, h3, h4 { margin: 0; }
 
@@ -108,6 +117,12 @@
             gap: 8px;
             margin-left: auto;
         }
+        @media (max-width: 600px) {
+            .field { flex: 1 1 100%; }
+            .field input { width: 100%; padding: 10px 8px; font-size: 16px; }
+            .toolbar-buttons { margin-left: 0; flex: 1 1 100%; flex-wrap: wrap; }
+            .toolbar-buttons button { flex: 1 1 calc(50% - 4px); padding: 12px 10px; }
+        }
         button {
             cursor: pointer;
             font-family: inherit;
@@ -131,6 +146,11 @@
             gap: 16px;
             align-items: start;
         }
+        /* Grid tracks don't shrink below their content's intrinsic width by
+           default -- without this, the min-width:700px canvas would force
+           this whole column (and the page along with it) wider instead of
+           scrolling internally within #canvasHolder. */
+        .main-grid > * { min-width: 0; }
         @media (max-width: 1100px) {
             .main-grid { grid-template-columns: 1fr; }
         }
@@ -143,6 +163,8 @@
 
         #canvasHolder {
             width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
         }
         #canvasHolder canvas {
             display: block;
@@ -150,6 +172,21 @@
             border: 1px solid var(--border);
             width: 100% !important;
             height: auto !important;
+            /* This is a dense technical schematic -- shrinking it to fit a
+               phone's width would make every label/number illegible. Instead
+               it holds a legible floor width and the holder above scrolls
+               horizontally (or the user pinch-zooms) on narrow screens. */
+            min-width: 700px;
+        }
+        .mobile-hint {
+            display: none;
+            font-size: 12px;
+            color: var(--text-dim);
+            text-align: center;
+            margin-top: 6px;
+        }
+        @media (max-width: 760px) {
+            .mobile-hint { display: block; }
         }
 
         /* ===== Status strip ===== */
@@ -246,6 +283,7 @@
              with the truck queue/back-in/load/pull-out animation happening live at the
              Truck Connections bays, drawn at their real position on the diagram. -->
         <div id="canvasHolder"></div>
+        <div class="mobile-hint">Scroll or pinch-zoom to explore the full diagram</div>
     </div>
 
     <div class="left-col">
