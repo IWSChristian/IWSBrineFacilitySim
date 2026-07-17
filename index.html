@@ -197,7 +197,7 @@
 <div class="titlebar">
     <div class="eyebrow">Infinity Water Solutions</div>
     <h2>Brine Loadout Simulation</h2>
-    <div class="subtitle">Startup 6:00 AM &ndash; Operations 7:00 AM – 5:00 PM</div>
+    <div class="subtitle">Startup 6:00 AM &ndash; Trucks 7:00 AM–5:00 PM &ndash; Sim ends 5:30 PM</div>
 </div>
 
 <!-- ===== PROCESS FLOW NOTES (for viewers unfamiliar with the facility) ===== -->
@@ -287,8 +287,14 @@
    ============================================ */
 
 // Operating window
-const WORK_HOURS = 10;             // 7am–5pm
+const WORK_HOURS = 10;             // 7am–5pm -- truck arrivals only happen in this window
 const TOTAL_MIN = WORK_HOURS * 60; // 600 minutes
+
+// The sim keeps running 30 min past TOTAL_MIN (until 5:30) so truck traffic
+// can visibly die down and finish draining out of the queue/bays, while
+// Tetra Treatment keeps running to Pond B the whole time.
+const TAIL_MIN    = 30;
+const SIM_END_MIN = TOTAL_MIN + TAIL_MIN;
 
 // Startup period: 6-7am, before truck loadout opens. Weir Tank Storage tops
 // off from 45k AST -> Electric Pump -> Tetra -> Weir Tank (the same physical
@@ -413,6 +419,10 @@ let storageVolume     = STORAGE_CAPACITY;
 let inRefillMode      = false;
 let lowestVolumeToday = STORAGE_CAPACITY;
 let lowestVolumeTime  = 0;
+
+// Eases toward storageVolume every frame instead of snapping, so the level
+// readout ticks up/down like a game score counter rather than jump-cutting.
+let displayedStorageVolume = STORAGE_CAPACITY;
 
 // simulation state
 let simMinutes        = 0;
@@ -539,6 +549,7 @@ function computeLaneInitialAvailability() {
 
 function maybeSpawnArrival() {
     if (!isFinite(currentArrivalIntervalMin)) return;
+    if (simMinutes >= TOTAL_MIN) return; // no new trucks after 5:00 -- traffic dies down, then stops
     if (simMinutes < nextArrivalTime) return;
     if (arrivalTruck) return;
 
@@ -743,6 +754,7 @@ function initState() {
     inRefillMode       = true;
     lowestVolumeToday  = storageVolume;
     lowestVolumeTime   = simMinutes;
+    displayedStorageVolume = storageVolume;
 
     updateTankHUD_HTML();
 }
@@ -963,7 +975,7 @@ function updateTankHUD_HTML() {
                 <div style="color:var(--text-dim, #8f99a3);">
                     ${inRefillMode
                         ? `Routing to Weir Tank Storage at ${tetraRateBblPerMin.toFixed(1)} bbl/min (${tetraCapacityBblPerDay.toLocaleString()} bbl/day throughput)`
-                        : `Routing to Pond B / Pond C (normal ops)`}
+                        : `Routing to Pond B (normal ops)`}
                 </div>
                 <div style="margin-top:6px; color:var(--text-dim, #8f99a3);">
                     Lowest today: ${lowestVolumeToday.toFixed(0)} bbl (${lowestPct}%) at ${minutesToClock(lowestVolumeTime)}
@@ -1179,74 +1191,101 @@ function drawWeirTankNode() {
     }
 }
 
-// Digital gauge-style readout next to the Weir Tank, showing current level,
-// total capacity, and the refill trigger level in one glance.
+// HUD-style readout next to the Weir Tank -- glowing, game-scoreboard
+// treatment: the big number ticks toward storageVolume like a score counter
+// (via displayedStorageVolume) instead of snapping, with a real canvas glow
+// behind it, echoing the same energy as the "-100 bbls" pull-out callout.
 function drawWeirTankLevelReadout() {
     const tl = worldToScreen(WEIR_READOUT.x, WEIR_READOUT.y);
     const br = worldToScreen(WEIR_READOUT.x + WEIR_READOUT.w, WEIR_READOUT.y + WEIR_READOUT.h);
     const w  = br.x - tl.x, h = br.y - tl.y, cx = tl.x + w / 2;
     const statusColor = weirTankStatusColor();
-    const pct = Math.round((storageVolume / STORAGE_CAPACITY) * 100);
+    const displayVol = Math.round(displayedStorageVolume);
+    const pct = constrain(displayedStorageVolume / STORAGE_CAPACITY, 0, 1);
+
+    // panel border/number glow pulses while something's actively happening
+    // (refilling, or critically low) -- calm, steady glow otherwise
+    const urgent = inRefillMode || storageVolume < TRUCK_SIZE_BBL;
+    const pulse  = urgent ? (0.5 + 0.5 * Math.sin(millis() / 350)) : 0;
 
     push();
     rectMode(CORNER);
 
-    // panel
+    // panel: dark HUD glass, glowing status-colored border
+    drawingContext.shadowColor = statusColor;
+    drawingContext.shadowBlur  = 12 + pulse * 12;
     stroke(statusColor);
-    strokeWeight(2);
-    fill(14, 17, 20, 235);
-    rect(tl.x, tl.y, w, h, 10);
+    strokeWeight(2.5);
+    fill(9, 11, 14, 235);
+    rect(tl.x, tl.y, w, h, 12);
+    drawingContext.shadowBlur = 0;
 
     noStroke();
     textAlign(CENTER, CENTER);
 
-    // label, in the diagram's normal font
-    fill(143, 153, 163);
+    // label
+    fill(150, 158, 168);
     textStyle(BOLD);
     textSize(11);
-    text("WEIR TANK", cx, tl.y + h * 0.09);
-    text("LEVEL", cx, tl.y + h * 0.09 + 14);
+    text("WEIR TANK LEVEL", cx, tl.y + h * 0.075);
 
-    // digit readouts get a monospace face -- tabular, unmistakably "gauge"
-    // rather than body copy -- restored to the default font at the end.
+    // big glowing number -- the HUD focal point
     textFont("'Courier New', Consolas, monospace");
-
-    // big current-level number, the focal point of the readout
-    fill(statusColor);
     textStyle(BOLD);
-    textSize(w * 0.30);
-    text(Math.round(storageVolume).toLocaleString(), cx, tl.y + h * 0.36);
-
+    drawingContext.shadowColor = statusColor;
+    drawingContext.shadowBlur  = 20 + pulse * 14;
+    fill(statusColor);
+    textSize(w * 0.36);
+    text(displayVol.toLocaleString(), cx, tl.y + h * 0.34);
+    drawingContext.shadowBlur = 0;
     textFont("sans-serif");
 
-    // capacity + percent full
-    fill(180, 188, 196);
+    // capacity readout
+    fill(205, 211, 217);
     textStyle(NORMAL);
     textSize(12);
-    text(`of ${STORAGE_CAPACITY.toLocaleString()} bbl`, cx, tl.y + h * 0.50);
-    fill(120, 128, 138);
-    textSize(11);
-    text(`${pct}% full`, cx, tl.y + h * 0.565);
+    text(`/ ${STORAGE_CAPACITY.toLocaleString()} bbl`, cx, tl.y + h * 0.50);
 
-    // divider
+    // percent-full bar -- a scoreboard health/fuel bar, not just a number
+    const barW = w * 0.76, barH = 9;
+    const barX = cx - barW / 2, barY = tl.y + h * 0.555;
     stroke(60, 66, 74);
     strokeWeight(1);
-    line(tl.x + 12, tl.y + h * 0.68, br.x - 12, tl.y + h * 0.68);
+    fill(0, 0, 0, 130);
+    rect(barX, barY, barW, barH, 4);
+    noStroke();
+    drawingContext.shadowColor = statusColor;
+    drawingContext.shadowBlur  = 8;
+    fill(statusColor);
+    rect(barX, barY, barW * pct, barH, 4);
+    drawingContext.shadowBlur = 0;
 
-    // refill trigger level
+    fill(140, 148, 158);
+    textSize(10);
+    text(`${Math.round(pct * 100)}%`, cx, barY + barH + 11);
+
+    // divider
+    stroke(55, 60, 68);
+    strokeWeight(1);
+    line(tl.x + 12, tl.y + h * 0.69, br.x - 12, tl.y + h * 0.69);
+
+    // refill trigger level -- its own small glowing amber readout
     noStroke();
     fill(251, 191, 36);
     textStyle(BOLD);
     textSize(11);
-    text("REFILL AT", cx, tl.y + h * 0.78);
+    text("REFILL AT", cx, tl.y + h * 0.775);
     textFont("'Courier New', Consolas, monospace");
-    textSize(19);
-    text(`${STORAGE_LOW_THRESHOLD.toLocaleString()}`, cx, tl.y + h * 0.865);
+    drawingContext.shadowColor = "#fbbf24";
+    drawingContext.shadowBlur  = 12;
+    textSize(21);
+    text(STORAGE_LOW_THRESHOLD.toLocaleString(), cx, tl.y + h * 0.87);
+    drawingContext.shadowBlur = 0;
     textFont("sans-serif");
     textStyle(NORMAL);
-    textSize(11);
+    textSize(10);
     fill(180, 150, 90);
-    text("bbl", cx, tl.y + h * 0.925);
+    text("bbl", cx, tl.y + h * 0.93);
 
     pop();
 }
@@ -1340,11 +1379,14 @@ function drawScene() {
     // junction -> second junction (1218,967): normal-ops continuation toward the ponds
     drawWorldPolyline([{x:814,y:967},{x:1218,y:967}],
         inRefillMode ? IDLE_COLOR : TREATED_COLOR, inRefillMode ? 2 : 3, true, false, !inRefillMode);
-    // second junction -> Pond B / Pond C
+    // second junction -> Pond B: the only pond actually receiving flow --
+    // real operations never split treated output between both ponds at once,
+    // they treat to one pond at a time (Pond B here).
     drawWorldPolyline([{x:1218,y:967},{x:1224,y:659},{x:1296,y:659}],
         inRefillMode ? IDLE_COLOR : TREATED_COLOR, inRefillMode ? 2 : 3, true, false, !inRefillMode);
+    // second junction -> Pond C: always idle -- shown only as available piping
     drawWorldPolyline([{x:1218,y:967},{x:1224,y:872},{x:1296,y:872}],
-        inRefillMode ? IDLE_COLOR : TREATED_COLOR, inRefillMode ? 2 : 3, true, false, !inRefillMode);
+        IDLE_COLOR, 2, true);
 
     // Weir Tank Storage -> Truck Connections: a single trunk line off the tank
     // that splits at a junction into one branch per lane. The trunk lights up
@@ -1470,7 +1512,7 @@ function setup() {
     document.getElementById("replayBtn").addEventListener("click", resetSimulation);
     document.getElementById("stopBtn").addEventListener("click", noLoop);
     document.getElementById("resumeBtn").addEventListener("click", () => {
-        if (simMinutes < TOTAL_MIN) loop();
+        if (simMinutes < SIM_END_MIN) loop();
     });
 }
 
@@ -1478,7 +1520,7 @@ function draw() {
     const dt = deltaTime / 1000.0;
     const dtMinutes = SIM_MIN_PER_REAL_SEC * dt;
     simMinutes += dtMinutes;
-    if (simMinutes >= TOTAL_MIN) simMinutes = TOTAL_MIN;
+    if (simMinutes >= SIM_END_MIN) simMinutes = SIM_END_MIN;
 
     updateRefills(dtMinutes);
     maybeSpawnArrival();
@@ -1486,6 +1528,7 @@ function draw() {
     processCompletedTrucks();
     updateLanesAndQueue();
     updateBblPopups();
+    displayedStorageVolume += (storageVolume - displayedStorageVolume) * 0.12;
 
     currentTotalBbl = completedCount * TRUCK_SIZE_BBL;
 
@@ -1495,7 +1538,7 @@ function draw() {
     updateTankHUD_HTML();
     updateSummary();
 
-    if (simMinutes >= TOTAL_MIN) {
+    if (simMinutes >= SIM_END_MIN) {
         noLoop();
     }
 }
