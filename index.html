@@ -317,6 +317,10 @@ const POPUP_RISE_PX     = 30;
 const POND_POPUP_INTERVAL_MS = 1000;
 const TREATED_POPUP_COLOR    = "#7dd3fc";
 
+// Weir Tank Level readout's big number: always this color so it stands out,
+// regardless of the tank's status color (which still shows on the border/bar)
+const READOUT_NUMBER_COLOR = "#7dd3fc";
+
 // Volumes and economics
 const TRUCK_SIZE_BBL       = 100;
 const PRICE_PER_BBL        = 2.00;
@@ -525,6 +529,29 @@ function minutesToClock(mins) {
     const hh = 7 + Math.floor(total / 60);
     const mm = ((total % 60) + 60) % 60;
     return `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
+}
+
+// Friendlier 12-hour clock for the on-canvas overlay, so a first-time viewer
+// doesn't have to parse a bare 24-hour "17:05" to know it's evening.
+function minutesToClock12(mins) {
+    if (!isFinite(mins)) return "--:--";
+    const total = Math.floor(mins);
+    const hh24 = 7 + Math.floor(total / 60);
+    const mm = ((total % 60) + 60) % 60;
+    const ampm = hh24 >= 12 ? "PM" : "AM";
+    let hh12 = hh24 % 12;
+    if (hh12 === 0) hh12 = 12;
+    return `${hh12}:${String(mm).padStart(2, "0")} ${ampm}`;
+}
+
+// One-line plain-English summary of what's currently happening, for anyone
+// opening the sim cold.
+function currentOpsStatusText() {
+    if (simMinutes < 0) return "Startup: topping off Weir Tank Storage from 45k AST";
+    if (simMinutes >= SIM_END_MIN) return "Simulation complete";
+    if (simMinutes >= TOTAL_MIN) return "Trucks done for the day — treatment continues to Pond B";
+    if (inRefillMode) return "Refilling Weir Tank Storage from 45k AST";
+    return "Normal operations: loading trucks, treating to Pond B";
 }
 
 
@@ -1219,16 +1246,18 @@ function drawWeirTankNode() {
 }
 
 // HUD-style readout next to the Weir Tank -- glowing, game-scoreboard
-// treatment: the big number ticks toward storageVolume like a score counter
-// (via displayedStorageVolume) instead of snapping, with a real canvas glow
-// behind it, echoing the same energy as the "-100 bbls" pull-out callout.
+// treatment. The number itself is instant (matches storageVolume exactly,
+// same frame as the "-100 bbls" pull-out callout -- no lag, no catch-up);
+// only the percent-full bar eases via displayedStorageVolume, so it still
+// slides smoothly without making the actual number feel delayed.
 function drawWeirTankLevelReadout() {
     const tl = worldToScreen(WEIR_READOUT.x, WEIR_READOUT.y);
     const br = worldToScreen(WEIR_READOUT.x + WEIR_READOUT.w, WEIR_READOUT.y + WEIR_READOUT.h);
     const w  = br.x - tl.x, h = br.y - tl.y, cx = tl.x + w / 2;
     const statusColor = weirTankStatusColor();
-    const displayVol = Math.round(displayedStorageVolume);
-    const pct = constrain(displayedStorageVolume / STORAGE_CAPACITY, 0, 1);
+    const displayVol = Math.round(storageVolume);
+    const exactPct = constrain(storageVolume / STORAGE_CAPACITY, 0, 1);
+    const barPct = constrain(displayedStorageVolume / STORAGE_CAPACITY, 0, 1);
 
     // panel border/number glow pulses while something's actively happening
     // (refilling, or critically low) -- calm, steady glow otherwise
@@ -1258,12 +1287,14 @@ function drawWeirTankLevelReadout() {
     text("WEIR TANK", cx, tl.y + h * 0.06);
     text("LEVEL", cx, tl.y + h * 0.06 + 12);
 
-    // big glowing number -- the HUD focal point
+    // big glowing number -- always bold light blue so it stands out
+    // regardless of tank status (the border/bar still carry the status
+    // color, so red/amber alerts are still visible there)
     textFont("'Courier New', Consolas, monospace");
     textStyle(BOLD);
-    drawingContext.shadowColor = statusColor;
+    drawingContext.shadowColor = READOUT_NUMBER_COLOR;
     drawingContext.shadowBlur  = 20 + pulse * 14;
-    fill(statusColor);
+    fill(READOUT_NUMBER_COLOR);
     textSize(w * 0.36);
     text(displayVol.toLocaleString(), cx, tl.y + h * 0.34);
     drawingContext.shadowBlur = 0;
@@ -1275,7 +1306,9 @@ function drawWeirTankLevelReadout() {
     textSize(12);
     text(`/ ${STORAGE_CAPACITY.toLocaleString()} bbl`, cx, tl.y + h * 0.50);
 
-    // percent-full bar -- a scoreboard health/fuel bar, not just a number
+    // percent-full bar -- a scoreboard health/fuel bar. The fill eases
+    // smoothly (barPct) for visual polish, but the % label next to it is
+    // instant (exactPct) so it always agrees with the big number above.
     const barW = w * 0.76, barH = 9;
     const barX = cx - barW / 2, barY = tl.y + h * 0.555;
     stroke(60, 66, 74);
@@ -1286,12 +1319,12 @@ function drawWeirTankLevelReadout() {
     drawingContext.shadowColor = statusColor;
     drawingContext.shadowBlur  = 8;
     fill(statusColor);
-    rect(barX, barY, barW * pct, barH, 4);
+    rect(barX, barY, barW * barPct, barH, 4);
     drawingContext.shadowBlur = 0;
 
     fill(140, 148, 158);
     textSize(10);
-    text(`${Math.round(pct * 100)}%`, cx, barY + barH + 11);
+    text(`${Math.round(exactPct * 100)}%`, cx, barY + barH + 11);
 
     // divider
     stroke(55, 60, 68);
@@ -1444,6 +1477,38 @@ function drawScene() {
     drawArrivalTruck();
     drawActiveTrucks();
     drawBblPopups();
+
+    // ===== clock + plain-English status, on top of everything =====
+    drawSimStatusOverlay();
+}
+
+// Fixed screen-space HUD (not world-mapped) in the top-left corner: clock +
+// a one-line summary of the current phase, for anyone opening the sim cold.
+function drawSimStatusOverlay() {
+    const x = 16, y = 16, w = 300, h = 70;
+
+    push();
+    rectMode(CORNER);
+    stroke(60, 66, 74);
+    strokeWeight(1);
+    fill(9, 11, 14, 220);
+    rect(x, y, w, h, 10);
+
+    noStroke();
+    textAlign(LEFT, TOP);
+
+    textFont("'Courier New', Consolas, monospace");
+    textStyle(BOLD);
+    fill(READOUT_NUMBER_COLOR);
+    textSize(22);
+    text(minutesToClock12(simMinutes), x + 14, y + 8);
+    textFont("sans-serif");
+
+    fill(190, 196, 202);
+    textStyle(NORMAL);
+    textSize(12);
+    text(currentOpsStatusText(), x + 14, y + 38, w - 28, h - 42);
+    pop();
 }
 
 
