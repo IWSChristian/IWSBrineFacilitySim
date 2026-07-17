@@ -365,7 +365,7 @@ const AST_60K         = { cx: 175, cy: 536, r: 103 };
 const AST_45K         = { cx: 626, cy: 536, r: 103 };
 const ELEC_PUMP       = { top: {x:401,y:438}, right:{x:476,y:495}, bottom:{x:401,y:552}, left:{x:326,y:495} };
 const POND_A          = { x: 912, y: 353, w: 300, h: 328 };           // right 1212, bottom 681
-const SIM_STATUS_BOX  = { x: 912, y: 1, w: 396, h: 260 };             // clock + status, sized to its content instead of the full gap height
+const SIM_STATUS_BOX  = { x: 912, y: 1, w: 480, h: 195 };             // clock + status: wide and short, using the space above Pond A/B (which don't start until y=353)
 const POND_B          = { x: 1315, y: 353, w: 665, h: 328 };          // right 1980, bottom 681
 const POND_B_INLET    = { x: 1385, y: 619 };                          // just inside Pond B, near where the pipe enters
 const POND_C          = { x: 1315, y: 708, w: 665, h: 328 };          // right 1980, bottom 1036
@@ -1249,8 +1249,8 @@ function drawWeirTankNode() {
     }
 }
 
-// HUD-style readout next to the Weir Tank -- glowing, game-scoreboard
-// treatment. The number itself is instant (matches storageVolume exactly,
+// HUD-style readout next to the Weir Tank -- game-scoreboard treatment,
+// no glow. The number itself is instant (matches storageVolume exactly,
 // same frame as the "-100 bbls" pull-out callout -- no lag, no catch-up);
 // only the percent-full bar eases via displayedStorageVolume, so it still
 // slides smoothly without making the actual number feel delayed.
@@ -1263,22 +1263,14 @@ function drawWeirTankLevelReadout() {
     const exactPct = constrain(storageVolume / STORAGE_CAPACITY, 0, 1);
     const barPct = constrain(displayedStorageVolume / STORAGE_CAPACITY, 0, 1);
 
-    // panel border/number glow pulses while something's actively happening
-    // (refilling, or critically low) -- calm, steady glow otherwise
-    const urgent = inRefillMode || storageVolume < TRUCK_SIZE_BBL;
-    const pulse  = urgent ? (0.5 + 0.5 * Math.sin(millis() / 350)) : 0;
-
     push();
     rectMode(CORNER);
 
-    // panel: dark HUD glass, glowing status-colored border
-    drawingContext.shadowColor = statusColor;
-    drawingContext.shadowBlur  = 12 + pulse * 12;
+    // panel: dark HUD glass, status-colored border
     stroke(statusColor);
     strokeWeight(2.5);
     fill(9, 11, 14, 235);
     rect(tl.x, tl.y, w, h, 12);
-    drawingContext.shadowBlur = 0;
 
     noStroke();
     textAlign(CENTER, CENTER);
@@ -1292,16 +1284,13 @@ function drawWeirTankLevelReadout() {
     text("WEIR TANK", cx, tl.y + h * 0.06);
     text("LEVEL", cx, tl.y + h * 0.06 + 12);
 
-    // big glowing number -- back to the tank's own status color (green/
-    // amber/orange/red), same as the border/bar
+    // big number -- the tank's own status color (green/amber/orange/red),
+    // same as the border/bar
     textFont("'Courier New', Consolas, monospace");
     textStyle(BOLD);
-    drawingContext.shadowColor = statusColor;
-    drawingContext.shadowBlur  = 20 + pulse * 14;
     fill(statusColor);
     textSize(w * 0.36);
     text(displayVol.toLocaleString(), cx, tl.y + h * 0.34);
-    drawingContext.shadowBlur = 0;
     textFont("sans-serif");
 
     // capacity readout
@@ -1320,11 +1309,8 @@ function drawWeirTankLevelReadout() {
     fill(0, 0, 0, 130);
     rect(barX, barY, barW, barH, 4);
     noStroke();
-    drawingContext.shadowColor = statusColor;
-    drawingContext.shadowBlur  = 8;
     fill(statusColor);
     rect(barX, barY, barW * barPct, barH, 4);
-    drawingContext.shadowBlur = 0;
 
     fill(140, 148, 158);
     textSize(10);
@@ -1335,18 +1321,15 @@ function drawWeirTankLevelReadout() {
     strokeWeight(1);
     line(tl.x + 12, tl.y + h * 0.69, br.x - 12, tl.y + h * 0.69);
 
-    // refill trigger level -- its own small glowing amber readout
+    // refill trigger level
     noStroke();
     fill(251, 191, 36);
     textStyle(BOLD);
     textSize(11);
     text("REFILL AT", cx, tl.y + h * 0.775);
     textFont("'Courier New', Consolas, monospace");
-    drawingContext.shadowColor = "#fbbf24";
-    drawingContext.shadowBlur  = 12;
     textSize(21);
     text(STORAGE_LOW_THRESHOLD.toLocaleString(), cx, tl.y + h * 0.87);
-    drawingContext.shadowBlur = 0;
     textFont("sans-serif");
     textStyle(NORMAL);
     textSize(10);
@@ -1512,15 +1495,15 @@ function drawSimStatusOverlay() {
     drawingContext.shadowColor = READOUT_NUMBER_COLOR;
     drawingContext.shadowBlur  = 10;
     fill(READOUT_NUMBER_COLOR);
-    textSize(30);
-    text(minutesToClock12(simMinutes), tl.x + 18, tl.y + 16);
+    textSize(28);
+    text(minutesToClock12(simMinutes), tl.x + 18, tl.y + 12);
     drawingContext.shadowBlur = 0;
     textFont("sans-serif");
 
     fill(205, 211, 217);
     textStyle(NORMAL);
-    textSize(16);
-    text(currentOpsStatusText(), tl.x + 18, tl.y + 62, w - 36, h - 76);
+    textSize(15);
+    text(currentOpsStatusText(), tl.x + 18, tl.y + 54, w - 36, h - 64);
     pop();
 }
 
