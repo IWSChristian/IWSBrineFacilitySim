@@ -368,7 +368,7 @@ const WORLD_Y_MAX = 1390;
 
 // ===== Real PFD node geometry (parsed from the SVG) =====
 const WEIR_TANK       = { x: 613, y: 1,   w: 140, h: 352 };           // right 753, bottom 353 -- narrowed to leave a real gap before the readout
-const WEIR_READOUT    = { x: 778, y: 1,   w: 129, h: 352 };           // digital level readout, fills almost the whole gap before Pond A
+const WEIR_READOUT    = { x: 788, y: 1,   w: 119, h: 352 };           // digital level readout -- shifted right to give the refill riser more breathing room
 const AST_60K         = { cx: 175, cy: 536, r: 103 };
 const AST_45K         = { cx: 626, cy: 536, r: 103 };
 const ELEC_PUMP       = { top: {x:401,y:438}, right:{x:476,y:495}, bottom:{x:401,y:552}, left:{x:326,y:495} };
@@ -1447,12 +1447,13 @@ function drawScene() {
     drawWorldPolyline([{x:613,y:967},{x:814,y:967}],
         TREATED_COLOR, 3, true, false, true);
     // junction -> Weir Tank Storage (refill-mode branch, idle otherwise).
-    // Jogs left to x:760 before rising -- that keeps the riser in the gap
-    // between the tank (ends 753) and the Weir Tank Level readout (starts
-    // 778) instead of running straight up behind the readout, which made
-    // the readout's opaque panel hide the middle of the pipe and look like
-    // the flow was coming from the readout instead of from Tetra Treatment.
-    drawWorldPolyline([{x:814,y:967},{x:760,y:967},{x:760,y:183},{x:753,y:183}],
+    // Taps straight off the trunk at x:768 (a point already on the Tetra ->
+    // 814 run above) instead of first running out to the 814 junction and
+    // doubling back -- that backtrack read as a visual "loop." x:768 sits in
+    // the gap between the tank (ends 753) and the Weir Tank Level readout
+    // (starts 788), so the riser doesn't run behind the readout's opaque
+    // panel either.
+    drawWorldPolyline([{x:768,y:967},{x:768,y:183},{x:753,y:183}],
         inRefillMode ? TREATED_COLOR : IDLE_COLOR, inRefillMode ? 3 : 2, true, false, inRefillMode);
     // junction -> second junction (1218,967): normal-ops continuation toward the ponds
     drawWorldPolyline([{x:814,y:967},{x:1218,y:967}],
