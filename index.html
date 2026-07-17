@@ -1279,22 +1279,22 @@ function drawWeirTankLevelReadout() {
     noStroke();
     textAlign(CENTER, CENTER);
 
-    // label -- two lines; at this box width a single "WEIR TANK LEVEL" line
-    // measures wider than the panel itself and spills past its edges
-    fill(150, 158, 168);
+    // label -- bold light blue so it stands out; two lines since at this box
+    // width a single "WEIR TANK LEVEL" line measures wider than the panel
+    // itself and spills past its edges
+    fill(READOUT_NUMBER_COLOR);
     textStyle(BOLD);
     textSize(10);
     text("WEIR TANK", cx, tl.y + h * 0.06);
     text("LEVEL", cx, tl.y + h * 0.06 + 12);
 
-    // big glowing number -- always bold light blue so it stands out
-    // regardless of tank status (the border/bar still carry the status
-    // color, so red/amber alerts are still visible there)
+    // big glowing number -- back to the tank's own status color (green/
+    // amber/orange/red), same as the border/bar
     textFont("'Courier New', Consolas, monospace");
     textStyle(BOLD);
-    drawingContext.shadowColor = READOUT_NUMBER_COLOR;
+    drawingContext.shadowColor = statusColor;
     drawingContext.shadowBlur  = 20 + pulse * 14;
-    fill(READOUT_NUMBER_COLOR);
+    fill(statusColor);
     textSize(w * 0.36);
     text(displayVol.toLocaleString(), cx, tl.y + h * 0.34);
     drawingContext.shadowBlur = 0;
@@ -1484,15 +1484,19 @@ function drawScene() {
 
 // Fixed screen-space HUD (not world-mapped) in the top-left corner: clock +
 // a one-line summary of the current phase, for anyone opening the sim cold.
+// Kept small and tight to the very top edge -- the queue/truck lane sits
+// just below it (screen y ~56+), and the Weir Tank column starts around
+// screen x ~350, so this has to fit in that narrow strip without spilling
+// into either.
 function drawSimStatusOverlay() {
-    const x = 16, y = 16, w = 300, h = 70;
+    const x = 14, y = 12, w = 260, h = 40;
 
     push();
     rectMode(CORNER);
     stroke(60, 66, 74);
     strokeWeight(1);
-    fill(9, 11, 14, 220);
-    rect(x, y, w, h, 10);
+    fill(9, 11, 14, 225);
+    rect(x, y, w, h, 8);
 
     noStroke();
     textAlign(LEFT, TOP);
@@ -1500,14 +1504,14 @@ function drawSimStatusOverlay() {
     textFont("'Courier New', Consolas, monospace");
     textStyle(BOLD);
     fill(READOUT_NUMBER_COLOR);
-    textSize(22);
-    text(minutesToClock12(simMinutes), x + 14, y + 8);
+    textSize(15);
+    text(minutesToClock12(simMinutes), x + 10, y + 5);
     textFont("sans-serif");
 
     fill(190, 196, 202);
     textStyle(NORMAL);
-    textSize(12);
-    text(currentOpsStatusText(), x + 14, y + 38, w - 28, h - 42);
+    textSize(9.5);
+    text(currentOpsStatusText(), x + 10, y + 23, w - 20, h - 25);
     pop();
 }
 
